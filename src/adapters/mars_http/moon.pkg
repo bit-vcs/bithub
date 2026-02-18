@@ -1,0 +1,4 @@
+import {
+  "mizchi/mars" @mars,
+  "bit-vcs/bithub/core" @core,
+}

@@ -1,0 +1,9 @@
+import {
+  "moonbitlang/async",
+  "mizchi/mars",
+  "bit-vcs/bithub/adapters/mars_http" @mars_http,
+}
+
+options(
+  "is-main": true,
+)

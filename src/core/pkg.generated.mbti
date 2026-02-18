@@ -1,0 +1,23 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "bit-vcs/bithub/core"
+
+// Values
+pub fn healthz_text() -> String
+
+pub fn home_text() -> String
+
+pub fn mars_route_specs() -> Array[RouteSpec]
+
+// Errors
+
+// Types and methods
+pub struct RouteSpec {
+  id : String
+  http_method : String
+  path : String
+}
+
+// Type aliases
+
+// Traits
+
