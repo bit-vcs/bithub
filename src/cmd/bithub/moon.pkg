@@ -11,6 +11,7 @@ import {
   "mizchi/luna/dom/static" @lstatic,
   "mizchi/luna/x/components" @components,
   "mizchi/markdown" @markdown,
+  "mizchi/markdown/syntree_api" @mdsyntree,
   "moonbitlang/core/strconv" @strconv,
   "moonbitlang/x/fs",
 }

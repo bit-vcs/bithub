@@ -17,10 +17,17 @@ test "extract_blob_path strips route prefix" {
 }
 
 ///|
-test "as_view_html wraps non-markdown in fenced block" {
-  let html = as_view_html("src/main.mbt", "fn main {}")
+test "as_view_html falls back to markdown renderer for unknown extensions" {
+  let html = as_view_html("src/main.unknown", "fn main {}")
   assert_true(html.contains("<pre"))
   assert_true(html.contains("fn main"))
+}
+
+///|
+test "as_view_html highlights known code files with syntree" {
+  let html = as_view_html("src/main.ts", "const x = 1")
+  assert_true(html.contains("class=\"highlight"))
+  assert_true(html.contains("color: #"))
 }
 
 ///|
@@ -28,6 +35,13 @@ test "render_layout contains issues link" {
   let state = RepoState::new(".")
   let html = state.render_layout("README.md", "<p>ok</p>")
   assert_true(html.contains("href=\"/issues\""))
+}
+
+///|
+test "render_layout uses split layout container" {
+  let state = RepoState::new(".")
+  let html = state.render_layout("README.md", "<p>ok</p>")
+  assert_true(html.contains("class=\"split-layout\""))
 }
 
 ///|

@@ -112,18 +112,28 @@ pub fn RepoState::render_layout(
   let footer_nodes : Array[@luna.Node[Unit, String]] = [
     @luna.text("luna components minimal file viewer"),
   ]
-  let page = @components.page_layout(
-    header=header_nodes,
-    nav_content=nav_nodes,
-    main_nodes,
-    footer_content=footer_nodes,
-  )
+  let page = @luna.fragment([
+    @components.banner(header_nodes),
+    @luna.h("div", [("class", @luna.attr_static("split-layout"))], [
+      @luna.h("aside", [("class", @luna.attr_static("file-sidebar"))], [
+        @components.nav(aria_label="repository files", nav_nodes),
+      ]),
+      @components.main_content(main_nodes),
+    ]),
+    @components.contentinfo(footer_nodes),
+  ])
   let css =
-    #|body{font-family:ui-sans-serif,system-ui,sans-serif;margin:0;padding:12px;line-height:1.4;}
+    #|html{height:100%;overflow:hidden;}
+    #|body{height:100%;box-sizing:border-box;font-family:ui-sans-serif,system-ui,sans-serif;margin:0;padding:72px 12px 28px;line-height:1.4;overflow:hidden;}
+    #|header{position:fixed;top:0;left:0;right:0;z-index:20;background:#fff;padding:12px;border-bottom:1px solid #ddd;}
+    #|footer{position:fixed;left:0;right:0;bottom:0;z-index:20;background:#fff;padding:4px 12px;border-top:1px solid #ddd;font-size:12px;}
+    #|.split-layout{display:grid;grid-template-columns:minmax(220px,34ch) minmax(0,1fr);gap:16px;align-items:stretch;height:calc(100vh - 100px);overflow:hidden;}
+    #|.file-sidebar{height:100%;min-height:0;overflow-y:auto;padding-right:8px;border-right:1px solid #ddd;}
+    #|.split-layout main{min-width:0;min-height:0;overflow:auto;}
     #|nav a{display:block;text-decoration:none;padding:2px 0;}
-    #|main{margin-top:12px;}
     #|pre{background:#f6f8fa;padding:12px;overflow:auto;}
     #|code{font-family:ui-monospace,Menlo,monospace;}
+    #|@media (max-width: 900px){html,body{height:auto;}body{padding-top:68px;padding-bottom:12px;overflow:auto;}footer{position:static;padding:8px 0 0;border-top:none;font-size:inherit;}.split-layout{display:flex;flex-direction:column;gap:12px;height:auto;overflow:visible;}.split-layout main{order:1;overflow:visible;}.file-sidebar{order:2;height:auto;overflow:visible;padding-right:0;border-right:none;border-top:1px solid #ddd;padding-top:8px;}}
   let doc = @lstatic.document(
     head_children=[
       @lstatic.meta(charset="utf-8"),
@@ -244,7 +254,46 @@ pub fn as_view_html(path : String, content : String) -> String {
   if path.has_suffix(".md") || path.has_suffix(".markdown") {
     return @markdown.md_to_html(content)
   }
-  @markdown.md_to_html("```text\n" + content + "\n```")
+  match highlight_source_with_syntree(path, content) {
+    Some(highlighted) => highlighted
+    None => @markdown.md_to_html("```text\n" + content + "\n```")
+  }
+}
+
+///|
+fn highlight_source_with_syntree(path : String, content : String) -> String? {
+  if path.has_suffix(".ts") ||
+    path.has_suffix(".tsx") ||
+    path.has_suffix(".js") ||
+    path.has_suffix(".jsx") {
+    return Some(@mdsyntree.highlight_typescript(content))
+  }
+  if path.has_suffix(".mbt") {
+    return Some(@mdsyntree.highlight_moonbit(content))
+  }
+  if path.has_suffix(".json") {
+    return Some(@mdsyntree.highlight_json(content))
+  }
+  if path.has_suffix(".html") ||
+    path.has_suffix(".htm") ||
+    path.has_suffix(".xml") {
+    return Some(@mdsyntree.highlight_html(content))
+  }
+  if path.has_suffix(".css") ||
+    path.has_suffix(".scss") ||
+    path.has_suffix(".less") {
+    return Some(@mdsyntree.highlight_css(content))
+  }
+  if path.has_suffix(".sh") ||
+    path.has_suffix(".bash") ||
+    path.has_suffix(".zsh") ||
+    path.has_suffix(".env") {
+    return Some(@mdsyntree.highlight_bash(content))
+  }
+  if path.has_suffix(".rs") {
+    return Some(@mdsyntree.highlight_rust(content))
+  }
+  None
 }
 
 ///|
