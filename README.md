@@ -6,14 +6,19 @@
 
 - まずは `mars` で実装する
 - `sol` へ引き上げられるように分解点を固定する
+- Cloudflare Workers (JS target) 前提で進める
 
 分解方針は `/Users/mz/ghq/github.com/bit-vcs/bithub/docs/mars-sol-boundary.md` を参照。
 
-## Run
+## Check
 
 ```bash
-moon check
-moon test
-moon run src/cmd/main
+moon check --target js
+moon test --target js
 ```
+
+## Cloudflare Entrypoint
+
+`/Users/mz/ghq/github.com/bit-vcs/bithub/src/cmd/main/main.mbt` に
+`fetch(request, env, exec_ctx)` を公開し、`@mars.Server::to_handler_with_env` へ委譲する。
 GitHub-like UI interface for bit

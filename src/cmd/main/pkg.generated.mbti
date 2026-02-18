@@ -1,7 +1,13 @@
 // Generated using `moon info`, DON'T EDIT IT
 package "bit-vcs/bithub/cmd/main"
 
+import {
+  "mizchi/mars",
+  "moonbitlang/async/js_async",
+}
+
 // Values
+pub fn fetch(@mars.JsRequest, @mars.JsEnv, @mars.JsExecCtx) -> @js_async.Promise[@mars.JsResponse]
 
 // Errors
 

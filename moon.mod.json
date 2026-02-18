@@ -16,5 +16,5 @@
   ],
   "description": "GitHub-like UI backend for bit",
   "source": "src",
-  "preferred-target": "native"
+  "preferred-target": "js"
 }

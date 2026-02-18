@@ -12,7 +12,8 @@
 - `adapters/mars_http`:
   - `core` を `mars.Server` へ接続する層
 - `cmd/main`:
-  - 起動と設定の組み立てのみ
+  - Cloudflare 向け `fetch` エントリ公開のみ
+  - `@mars.Server::to_handler_with_env` に委譲する
 
 ## Migration Intention
 

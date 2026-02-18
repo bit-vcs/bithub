@@ -1,5 +1,10 @@
 ///|
-async fn main {
+pub fn fetch(
+  request : @mars.JsRequest,
+  env : @mars.JsEnv,
+  exec_ctx : @mars.JsExecCtx,
+) -> @js_async.Promise[@mars.JsResponse] {
   let app = @mars_http.create_app()
-  app.serve(host="127.0.0.1", port=3000)
+  let handler = app.to_handler_with_env(env, exec_ctx)
+  handler(request)
 }
