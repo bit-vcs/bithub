@@ -5,25 +5,47 @@ pub struct PageResponse {
 }
 
 ///|
+pub struct IssueSummary {
+  id : String
+  title : String
+  state : String
+}
+
+///|
+pub fn issue_summary(
+  id : String,
+  title : String,
+  state : String,
+) -> IssueSummary {
+  { id, title, state }
+}
+
+///|
 pub struct RepoState {
   root : String
   files : Array[String]
   initial_path : String
+  issues : Array[IssueSummary]
 }
 
 ///|
 pub fn RepoState::new(root : String) -> RepoState {
   let resolved = @npath.resolve([root])
-  let files = collect_repo_files(resolved, 240)
-  files.sort_by(fn(a, b) { String::compare(a, b) })
-  let initial_path = if files.contains("README.md") {
+  let files = scan_repo_files(resolved, 240)
+  let issues = load_repo_issues(resolved, 120)
+  let initial_path = select_initial_path(files)
+  { root: resolved, files, initial_path, issues }
+}
+
+///|
+fn select_initial_path(files : Array[String]) -> String {
+  if files.contains("README.md") {
     "README.md"
   } else if files.length() > 0 {
     files[0]
   } else {
     ""
   }
-  { root: resolved, files, initial_path }
 }
 
 ///|
@@ -45,7 +67,7 @@ pub fn RepoState::render_blob(
   let sanitized = sanitize_rel_path(raw_path)
   match sanitized {
     Some(rel_path) =>
-      match read_repo_file(self.root, rel_path) {
+      match load_repo_file(self.root, rel_path) {
         Some(content) => {
           let body_html = as_view_html(rel_path, content)
           { status: 200, html: self.render_layout(rel_path, body_html) }
@@ -63,6 +85,14 @@ pub fn RepoState::render_blob(
 }
 
 ///|
+pub fn RepoState::render_issues(self : RepoState) -> PageResponse {
+  {
+    status: 200,
+    html: self.render_layout("(issues)", as_issues_html(self.issues)),
+  }
+}
+
+///|
 pub fn RepoState::render_layout(
   self : RepoState,
   selected_path : String,
@@ -70,6 +100,8 @@ pub fn RepoState::render_layout(
 ) -> String {
   let header_nodes : Array[@luna.Node[Unit, String]] = [
     @components.link("/", [@luna.text("bithub")]),
+    @luna.text(" | "),
+    @components.link("/issues", [@luna.text("issues")]),
     @luna.text(" : " + self.root),
   ]
   let nav_nodes = build_nav_nodes(self.files, selected_path)
@@ -104,6 +136,30 @@ pub fn RepoState::render_layout(
 }
 
 ///|
+pub fn as_issues_html(issues : Array[IssueSummary]) -> String {
+  let buf = StringBuilder::new()
+  buf.write_string("<h1>Issues</h1>")
+  if issues.length() == 0 {
+    buf.write_string("<p>No issues found.</p>")
+    return buf.to_string()
+  }
+  buf.write_string("<ul>")
+  for issue in issues {
+    buf.write_string(
+      "<li><code>" +
+      escape_html(issue.id) +
+      "</code> " +
+      escape_html(issue.title) +
+      " <strong>(" +
+      escape_html(issue.state) +
+      ")</strong></li>",
+    )
+  }
+  buf.write_string("</ul>")
+  buf.to_string()
+}
+
+///|
 fn build_nav_nodes(
   files : Array[String],
   selected_path : String,
@@ -123,100 +179,6 @@ fn build_nav_nodes(
     nodes.push(@luna.text("..."))
   }
   nodes
-}
-
-///|
-fn collect_repo_files(root : String, limit : Int) -> Array[String] {
-  let out : Array[String] = []
-  collect_repo_files_recursive(root, "", out, limit)
-  out
-}
-
-///|
-priv enum EntryKind {
-  Dir
-  File
-  Other
-}
-
-///|
-fn path_kind(abs_path : String) -> EntryKind {
-  let st = @nfs.stat_sync(abs_path) catch { _ => return Other }
-  if st.isDirectory() {
-    Dir
-  } else if st.isFile() {
-    File
-  } else {
-    Other
-  }
-}
-
-///|
-fn collect_repo_files_recursive(
-  root : String,
-  rel_dir : String,
-  out : Array[String],
-  limit : Int,
-) -> Unit {
-  if out.length() >= limit {
-    return
-  }
-  let abs_dir = if rel_dir.length() == 0 {
-    root
-  } else {
-    @npath.join2(root, rel_dir)
-  }
-  let names = @nfs.readdir_sync(abs_dir) catch { _ => [] }
-  names.sort_by(fn(a, b) { String::compare(a, b) })
-  for name in names {
-    if out.length() >= limit {
-      return
-    }
-    if not(should_skip_name(name)) {
-      let rel_path = if rel_dir.length() == 0 {
-        name
-      } else {
-        rel_dir + "/" + name
-      }
-      let abs_path = @npath.join2(root, rel_path)
-      match path_kind(abs_path) {
-        Dir => collect_repo_files_recursive(root, rel_path, out, limit)
-        File => if is_viewable_file(rel_path) { out.push(rel_path) }
-        Other => ()
-      }
-    }
-  }
-}
-
-///|
-fn should_skip_name(name : String) -> Bool {
-  name == ".git" ||
-  name == ".mooncakes" ||
-  name == "_build" ||
-  name == "target" ||
-  name == "node_modules"
-}
-
-///|
-fn is_viewable_file(path : String) -> Bool {
-  if path.has_suffix(".png") ||
-    path.has_suffix(".jpg") ||
-    path.has_suffix(".jpeg") ||
-    path.has_suffix(".gif") ||
-    path.has_suffix(".webp") ||
-    path.has_suffix(".wasm") {
-    return false
-  }
-  true
-}
-
-///|
-fn read_repo_file(root : String, rel_path : String) -> String? {
-  let abs_path = @npath.join2(root, rel_path)
-  let text = @nfs.read_file_as_string(abs_path, encoding="utf-8") catch {
-    _ => return None
-  }
-  Some(text)
 }
 
 ///|
@@ -283,4 +245,20 @@ pub fn as_view_html(path : String, content : String) -> String {
     return @markdown.md_to_html(content)
   }
   @markdown.md_to_html("```text\n" + content + "\n```")
+}
+
+///|
+fn escape_html(raw : String) -> String {
+  let buf = StringBuilder::new()
+  for c in raw {
+    match c {
+      '&' => buf.write_string("&amp;")
+      '<' => buf.write_string("&lt;")
+      '>' => buf.write_string("&gt;")
+      '"' => buf.write_string("&quot;")
+      '\'' => buf.write_string("&#39;")
+      _ => buf.write_char(c)
+    }
+  }
+  buf.to_string()
 }

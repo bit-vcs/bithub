@@ -24,6 +24,18 @@ pnpm install
 pnpm test:e2e
 ```
 
+## Benchmark
+
+```bash
+moon bench -p bit-vcs/bithub/cmd/bithub --target js -f bench_viewer_test.mbt
+pnpm bench
+moon run src/cmd/bithub_bench --target js -- . 20
+```
+
+- `moon bench`: 標準ベンチハーネス
+- `pnpm bench`: 手早いサマリ表示（デフォルト設定）
+- `moon run ... -- <repo> <iterations>`: 対象リポジトリと反復回数を明示指定
+
 ## Local Viewer (`bithub .`)
 
 現在のリポジトリを GitHub 風に閲覧する最小 UI を起動できます。
@@ -35,6 +47,7 @@ pnpm test:e2e
 
 - `/` で `README.md` を優先表示
 - `/blob/<path>` でファイル表示
+- `/issues` で `bit hub` の Issue 一覧表示
 - UI は `mizchi/luna/x/components` ベースの最小構成
 
 ## Cloudflare Entrypoint

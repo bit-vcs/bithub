@@ -24,3 +24,12 @@ test('path traversal is rejected', async ({ page }) => {
   expect(response!.status()).toBe(400);
   await expect(page.locator('main')).toContainText('Invalid path.');
 });
+
+test('issues list page is available', async ({ page }) => {
+  await page.goto('/');
+
+  await page.getByRole('link', { name: 'issues' }).click();
+
+  await expect(page).toHaveURL(/\/issues$/);
+  await expect(page.getByRole('heading', { level: 1, name: 'Issues' })).toBeVisible();
+});

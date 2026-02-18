@@ -1,4 +1,7 @@
 import {
+  "mizchi/bit" @bit,
+  "mizchi/bit/lib" @bitlib,
+  "mizchi/bit/x/hub" @hub,
   "mizchi/js/core" @js,
   "mizchi/js/node/fs" @nfs,
   "mizchi/js/node/http" @nhttp,
@@ -9,12 +12,18 @@ import {
   "mizchi/luna/x/components" @components,
   "mizchi/markdown" @markdown,
   "moonbitlang/core/strconv" @strconv,
+  "moonbitlang/x/fs",
 }
+
+import {
+  "moonbitlang/core/bench" @bench,
+} for "test"
 
 options(
   is_main: true,
   link: { "js": { "format": "cjs" } },
   targets: {
+    "bench_viewer_test.mbt": [ "js" ],
     "main.mbt": [ "js" ],
     "viewer.mbt": [ "js" ],
     "viewer_test.mbt": [ "js" ],

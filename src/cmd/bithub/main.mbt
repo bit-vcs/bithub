@@ -18,6 +18,11 @@ fn route_response(state : RepoState, raw_url : String) -> PageResponse {
   if raw_url == "/" || raw_url.has_prefix("/?") || raw_url.has_prefix("/#") {
     return state.render_root()
   }
+  if raw_url == "/issues" ||
+    raw_url.has_prefix("/issues?") ||
+    raw_url.has_prefix("/issues#") {
+    return state.render_issues()
+  }
   if raw_url.has_prefix("/blob/") {
     let rel_path = extract_blob_path(raw_url)
     return state.render_blob(rel_path)

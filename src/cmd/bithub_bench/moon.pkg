@@ -1,0 +1,12 @@
+import {
+  "bit-vcs/bithub/cmd/bithub" @bithub,
+  "mizchi/js/builtins/date" @jdate,
+  "mizchi/js/node/process" @nprocess,
+  "moonbitlang/core/strconv" @strconv,
+}
+
+options(
+  is_main: true,
+  link: { "js": { "format": "cjs" } },
+  targets: { "main.mbt": [ "js" ] },
+)
