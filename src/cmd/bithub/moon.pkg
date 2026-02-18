@@ -1,0 +1,22 @@
+import {
+  "mizchi/js/core" @js,
+  "mizchi/js/node/fs" @nfs,
+  "mizchi/js/node/http" @nhttp,
+  "mizchi/js/node/path" @npath,
+  "mizchi/js/node/process" @nprocess,
+  "mizchi/luna" @luna,
+  "mizchi/luna/dom/static" @lstatic,
+  "mizchi/luna/x/components" @components,
+  "mizchi/markdown" @markdown,
+  "moonbitlang/core/strconv" @strconv,
+}
+
+options(
+  is_main: true,
+  link: { "js": { "format": "cjs" } },
+  targets: {
+    "main.mbt": [ "js" ],
+    "viewer.mbt": [ "js" ],
+    "viewer_test.mbt": [ "js" ],
+  },
+)

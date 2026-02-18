@@ -1,0 +1,32 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "bit-vcs/bithub/cmd/bithub"
+
+// Values
+pub fn as_view_html(String, String) -> String
+
+pub fn extract_blob_path(String) -> String
+
+pub fn sanitize_rel_path(String) -> String?
+
+// Errors
+
+// Types and methods
+pub struct PageResponse {
+  status : Int
+  html : String
+}
+
+pub struct RepoState {
+  root : String
+  files : Array[String]
+  initial_path : String
+}
+pub fn RepoState::new(String) -> Self
+pub fn RepoState::render_blob(Self, String) -> PageResponse
+pub fn RepoState::render_layout(Self, String, String) -> String
+pub fn RepoState::render_root(Self) -> PageResponse
+
+// Type aliases
+
+// Traits
+
