@@ -42,6 +42,51 @@ test "render_layout uses split layout container" {
   let state = RepoState::new(".")
   let html = state.render_layout("README.md", "<p>ok</p>")
   assert_true(html.contains("class=\"split-layout\""))
+  assert_true(html.contains("class=\"split-resizer\""))
+  assert_true(html.contains("role=\"separator\""))
+}
+
+///|
+test "render_layout includes dark mode css" {
+  let state = RepoState::new(".")
+  let html = state.render_layout("README.md", "<p>ok</p>")
+  assert_true(html.contains("prefers-color-scheme: dark"))
+}
+
+///|
+test "render_layout uses collapsible tree for filer" {
+  let state = RepoState::new(".")
+  let html = state.render_layout("src/cmd/bithub/main.mbt", "<p>ok</p>")
+  assert_true(html.contains("role=\"tree\""))
+  assert_true(html.contains("role=\"treeitem\""))
+  assert_true(html.contains("nav ul[role=tree]"))
+  assert_true(html.contains("class=\"file-tree-icon file-tree-icon-dir\""))
+  assert_true(html.contains("class=\"file-tree-icon file-tree-icon-file\""))
+  assert_true(html.contains("class=\"file-tree-dir\""))
+  assert_true(html.contains("data-tree-path=\"src\""))
+  assert_true(html.contains("[*] main.mbt"))
+  assert_true(not(html.contains("[*] src/cmd/bithub/main.mbt")))
+  assert_true(html.contains("<summary"))
+}
+
+///|
+test "replace_path_prefix_with_tilde shortens home path" {
+  assert_true(
+    replace_path_prefix_with_tilde(
+      "/Users/mz/ghq/github.com/bit-vcs/bithub", "/Users/mz",
+    ) ==
+    "~/ghq/github.com/bit-vcs/bithub",
+  )
+  assert_true(
+    replace_path_prefix_with_tilde(
+      "/Users/mz/ghq/github.com/bit-vcs/bithub", "/Users/mz/",
+    ) ==
+    "~/ghq/github.com/bit-vcs/bithub",
+  )
+  assert_true(
+    replace_path_prefix_with_tilde("/tmp/workspace", "/Users/mz") ==
+    "/tmp/workspace",
+  )
 }
 
 ///|
