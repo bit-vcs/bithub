@@ -13,6 +13,7 @@ import {
   "mizchi/markdown" @markdown,
   "mizchi/markdown/syntree_api" @mdsyntree,
   "mizchi/sol" @sol,
+  "moonbitlang/core/json" @json,
   "moonbitlang/core/strconv" @strconv,
   "moonbitlang/x/fs",
 }

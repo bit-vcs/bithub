@@ -22,6 +22,8 @@ pub fn parse_catalog_text(String) -> Array[(String, String)]
 
 pub fn parse_cli_options(Array[String]) -> CliOptions
 
+pub fn parse_relay_nodes_from_poll(String) -> Array[RelayPeer]
+
 pub fn render_p2p_command(String, String, Int) -> String
 
 pub fn replace_path_prefix_with_tilde(String, String) -> String
@@ -39,6 +41,8 @@ pub struct CliOptions {
   enable_p2p : Bool
   p2p_command_template : String?
   catalog_path : String?
+  relay_url : String?
+  relay_sender : String?
 }
 
 pub struct IssueSummary {
@@ -50,6 +54,12 @@ pub struct IssueSummary {
 pub struct PageResponse {
   status : Int
   html : String
+}
+
+pub struct RelayPeer {
+  sender : String
+  url : String
+  name : String
 }
 
 pub struct RepoState {

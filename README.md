@@ -53,6 +53,8 @@ moon run src/cmd/bithub_bench --target js -- . 20
 ./bithub . 9000   # custom port
 ./bithub . --p2p  # localtunnel で公開URLを生成
 ./bithub . --p2p --p2p-cmd "cloudflared tunnel --url {url}" # 任意コマンド
+./bithub . --relay relay+http://127.0.0.1:8788            # relay ノード一覧を /relay で表示
+./bithub . --p2p --relay relay+https://relay.example.com --relay-sender node-a
 ./bithub --catalog ./repos.catalog   # 複数repoの総合トップを公開
 ./bithub --catalog ./repos.catalog 9000
 ```
@@ -60,9 +62,13 @@ moon run src/cmd/bithub_bench --target js -- . 20
 - `/` で `README.md` を優先表示
 - `/blob/<path>` でファイル表示
 - `/issues` で `bit hub` の Issue 一覧表示
+- `/relay` で relay に publish された bithub ノード一覧を表示
 - UI は `mizchi/luna/x/components` ベースの最小構成
 - `--p2p` でトンネルを別プロセス起動して公開URLを標準出力に表示
 - `--p2p-cmd` か `BITHUB_P2P_CMD` で起動コマンドを上書き（`{url}` / `{port}` を展開）
+- `--relay` 指定時は relay の `GET /api/v1/poll` を参照し、`kind=bithub.node` を一覧化
+- `--relay-sender` で relay publish 時の sender を指定（未指定は `BITHUB_RELAY_SENDER` / `USER`）
+- `BIT_RELAY_AUTH_TOKEN` を設定すると relay poll/publish に Authorization ヘッダを付与
 
 ### Catalog File (`--catalog`)
 
