@@ -18,35 +18,50 @@ test "texts are stable for adapter boundary" {
 }
 
 ///|
-test "ApiState renders README.md by markdown renderer" {
+test "ApiState exposes README markdown text" {
   let api = ApiState::new()
-  let html = api.render_readme_html()
-  assert_true(html.contains("<h1>"))
-  assert_true(html.contains("bithub"))
+  let markdown = api.readme_markdown()
+  assert_true(markdown.contains("# bithub"))
+  assert_true(markdown.contains("minimal self-browsing API"))
 }
 
 ///|
-test "ApiState renders filer with minimum links" {
+test "ApiState lists filer entries as data" {
   let api = ApiState::new()
-  let root = api.render_filer_html("")
-  assert_true(root.contains("README.md"))
-  assert_true(root.contains("/file?path=README.md"))
-  assert_true(root.contains("moon.mod.json"))
-  assert_true(root.contains("/file?path=moon.mod.json"))
-  assert_true(root.contains("src"))
-  assert_true(root.contains("/filer?path=src"))
-  let core = api.render_filer_html("src/core")
-  assert_true(core.contains("api_state.mbt"))
-  assert_true(core.contains("/file?path=src/core/api_state.mbt"))
+  let root = api.list_entries("")
+  assert_true(root.any(fn(entry) { entry.name == "README.md" && not(entry.is_dir) }))
+  assert_true(root.any(fn(entry) { entry.name == "moon.mod.json" && not(entry.is_dir) }))
+  assert_true(root.any(fn(entry) { entry.name == "src" && entry.is_dir }))
+
+  let core = api.list_entries("src/core")
+  assert_true(
+    core.any(fn(entry) {
+      entry.name == "api_state.mbt" &&
+      entry.path == "src/core/api_state.mbt" &&
+      not(entry.is_dir)
+    }),
+  )
 }
 
 ///|
-test "ApiState renders file content and missing file status" {
+test "ApiState lookup_file returns content with status" {
   let api = ApiState::new()
-  let found = api.render_file_response("src/core/api_state.mbt")
+  let found = api.lookup_file("src/core/api_state.mbt")
   inspect(found.status, content="200")
-  assert_true(found.body.contains("pub struct ApiState"))
-  let missing = api.render_file_response("missing.txt")
+  assert_eq(found.path, "src/core/api_state.mbt")
+  assert_true(
+    match found.content {
+      Some(text) => text.contains("pub struct ApiState")
+      None => false
+    },
+  )
+
+  let missing = api.lookup_file("missing.txt")
   inspect(missing.status, content="404")
-  assert_true(missing.body.contains("not found"))
+  assert_eq(missing.path, "missing.txt")
+  assert_eq(missing.content, None)
+
+  let empty = api.lookup_file("")
+  inspect(empty.status, content="404")
+  assert_eq(empty.content, None)
 }

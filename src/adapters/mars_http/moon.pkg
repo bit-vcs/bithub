@@ -1,4 +1,8 @@
 import {
+  "mizchi/luna" @luna,
+  "mizchi/luna/x/components" @components,
   "mizchi/mars" @mars,
+  "mizchi/markdown" @markdown,
+  "mizchi/sol" @sol,
   "bit-vcs/bithub/core" @core,
 }

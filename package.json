@@ -4,6 +4,8 @@
   "scripts": {
     "bench": "moon run src/cmd/bithub_bench --target js -- . 20",
     "test:e2e": "playwright test",
+    "test:e2e:mars": "playwright test --project mars-http-ssr",
+    "test:e2e:viewer": "playwright test --project bithub-viewer",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:ui": "playwright test --ui"
   },

@@ -1,0 +1,14 @@
+import {
+  "bit-vcs/bithub/adapters/mars_http" @mars_http,
+  "mizchi/js/node/process" @nprocess,
+  "mizchi/sol" @sol,
+  "moonbitlang/core/strconv" @strconv,
+}
+
+options(
+  is_main: true,
+  link: { "js": { "format": "cjs" } },
+  targets: {
+    "main.mbt": [ "js" ],
+  },
+)

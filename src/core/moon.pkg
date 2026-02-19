@@ -3,6 +3,5 @@ import {
   "mizchi/bit/lib" @bitlib,
   "mizchi/bit/x/fs" @bitfs,
   "mizchi/bit/x/kv" @kv,
-  "mizchi/markdown" @markdown,
   "moonbitlang/core/encoding/utf8" @utf8,
 }

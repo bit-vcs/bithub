@@ -20,11 +20,9 @@ pub struct ApiState {
 }
 pub fn ApiState::file_text(Self, String) -> String?
 pub fn ApiState::list_entries(Self, String) -> Array[FileEntry]
+pub fn ApiState::lookup_file(Self, String) -> FileLookup
 pub fn ApiState::new() -> Self
-pub fn ApiState::render_file_response(Self, String) -> HtmlResponse
-pub fn ApiState::render_filer_html(Self, String) -> String
-pub fn ApiState::render_home_html(Self) -> String
-pub fn ApiState::render_readme_html(Self) -> String
+pub fn ApiState::readme_markdown(Self) -> String
 
 pub struct FileEntry {
   name : String
@@ -32,9 +30,10 @@ pub struct FileEntry {
   is_dir : Bool
 }
 
-pub struct HtmlResponse {
+pub struct FileLookup {
   status : Int
-  body : String
+  path : String
+  content : String?
 }
 
 pub struct RouteSpec {

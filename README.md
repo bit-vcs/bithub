@@ -4,8 +4,8 @@
 
 ## Current Direction
 
-- まずは `mars` で実装する
-- `sol` へ引き上げられるように分解点を固定する
+- HTTP ルーティングは `mars` を使う
+- SSR は `sol` + `luna/x/components` で描画する
 - Cloudflare Workers (JS target) 前提で進める
 
 分解方針は `/Users/mz/ghq/github.com/bit-vcs/bithub/docs/mars-sol-boundary.md` を参照。
@@ -78,4 +78,6 @@ bit core	/Users/mz/ghq/github.com/bit-vcs/bit
 
 `/Users/mz/ghq/github.com/bit-vcs/bithub/src/cmd/main/main.mbt` に
 `fetch(request, env, exec_ctx)` を公開し、`@mars.Server::to_handler_with_env` へ委譲する。
+ページ本体は `/Users/mz/ghq/github.com/bit-vcs/bithub/src/adapters/mars_http/server.mbt` で
+`@sol.render_page` + `mizchi/luna/x/components` を使って SSR している。
 GitHub-like UI interface for bit

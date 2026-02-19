@@ -6,9 +6,10 @@ pub struct FileEntry {
 }
 
 ///|
-pub struct HtmlResponse {
+pub struct FileLookup {
   status : Int
-  body : String
+  path : String
+  content : String?
 }
 
 ///|
@@ -140,90 +141,22 @@ pub fn ApiState::new() -> ApiState {
 }
 
 ///|
-pub fn ApiState::render_home_html(_self : ApiState) -> String {
-  let body =
-    #|<h1>bithub</h1>
-    #|<p>minimal github-like interface backed by bit kv.</p>
-    #|<ul>
-    #|  <li><a href="/readme">README.md</a></li>
-    #|  <li><a href="/filer">files</a></li>
-    #|</ul>
-  wrap_page("bithub", body)
+pub fn ApiState::readme_markdown(self : ApiState) -> String {
+  self.file_text("README.md").unwrap_or("# README.md\n\nnot found")
 }
 
 ///|
-pub fn ApiState::render_readme_html(self : ApiState) -> String {
-  let md = self.file_text("README.md").unwrap_or("# README.md\n\nnot found")
-  let html = @markdown.md_to_html(md)
-  wrap_page("README.md", "<article>" + html + "</article>")
-}
-
-///|
-pub fn ApiState::render_filer_html(
+pub fn ApiState::lookup_file(
   self : ApiState,
   raw_path : String,
-) -> String {
-  let path = normalize_path(raw_path)
-  let entries = self.list_entries(path)
-  let buf = StringBuilder::new()
-  buf.write_string("<h1>filer</h1>")
-  if path.length() == 0 {
-    buf.write_string("<p>path: /</p>")
-  } else {
-    buf.write_string("<p>path: /" + escape_html(path) + "</p>")
-  }
-  buf.write_string("<ul>")
-  for entry in entries {
-    if entry.is_dir {
-      buf.write_string(
-        "<li>[dir] <a href=\"/filer?path=" +
-        escape_html(entry.path) +
-        "\">" +
-        escape_html(entry.name) +
-        "/</a></li>",
-      )
-    } else {
-      buf.write_string(
-        "<li>[file] <a href=\"/file?path=" +
-        escape_html(entry.path) +
-        "\">" +
-        escape_html(entry.name) +
-        "</a></li>",
-      )
-    }
-  }
-  if entries.length() == 0 {
-    buf.write_string("<li>(empty)</li>")
-  }
-  buf.write_string("</ul>")
-  wrap_page("filer", buf.to_string())
-}
-
-///|
-pub fn ApiState::render_file_response(
-  self : ApiState,
-  raw_path : String,
-) -> HtmlResponse {
+) -> FileLookup {
   let path = normalize_path(raw_path)
   if path.length() == 0 {
-    return {
-      status: 404,
-      body: wrap_page("file", "<h1>file</h1><p>not found</p>"),
-    }
+    return { status: 404, path, content: None }
   }
   match self.file_text(path) {
-    Some(content) => {
-      let body = "<h1>" +
-        escape_html(path) +
-        "</h1><pre>" +
-        escape_html(content) +
-        "</pre>"
-      { status: 200, body: wrap_page(path, body) }
-    }
-    None => {
-      let body = "<h1>" + escape_html(path) + "</h1><p>not found</p>"
-      { status: 404, body: wrap_page(path, body) }
-    }
+    Some(content) => { status: 200, path, content: Some(content) }
+    None => { status: 404, path, content: None }
   }
 }
 
@@ -289,14 +222,18 @@ fn seed_files(kv : @kv.Kv) -> Unit {
     #|}
   kv.set_string("src/core/core.mbt", core_source)
   let api_state_source =
+    #|pub struct FileLookup {
+    #|  status : Int
+    #|  path : String
+    #|  content : String?
+    #|}
+    #|
     #|pub struct ApiState {
     #|  kv : @kv.Kv
     #|}
     #|
-    #|pub fn ApiState::render_filer_html(self : ApiState, path : String) -> String {
-    #|  let entries = self.list_entries(path)
-    #|  // minimal html
-    #|  "<h1>filer</h1>"
+    #|pub fn ApiState::lookup_file(self : ApiState, path : String) -> FileLookup {
+    #|  { status: 200, path, content: None }
     #|}
   kv.set_string("src/core/api_state.mbt", api_state_source)
   let mars_adapter =
@@ -304,8 +241,8 @@ fn seed_files(kv : @kv.Kv) -> Unit {
     #|  let app = @mars.Server::new()
     #|  let api = @core.ApiState::new()
     #|  let _ = app
-    #|    ..get("/", fn(ctx) { ctx.html(api.render_home_html()) })
-    #|    ..get("/filer", fn(ctx) { ctx.html(api.render_filer_html("")) })
+    #|    ..get("/", fn(ctx) { ctx.html(@sol.render_page(@luna.text("bithub"))) })
+    #|    ..get("/filer", fn(ctx) { ctx.html(@sol.render_page(@luna.text("filer"))) })
     #|  app
     #|}
   kv.set_string("src/adapters/mars_http/server.mbt", mars_adapter)
@@ -347,43 +284,4 @@ fn join_path(parent : String, child : String) -> String {
   } else {
     parent + "/" + child
   }
-}
-
-///|
-fn wrap_page(title : String, body_html : String) -> String {
-  let style =
-    #|body{font-family:ui-monospace,Menlo,monospace;max-width:900px;margin:24px auto;padding:0 12px;}
-    #|nav{margin-bottom:12px;}
-    #|pre{background:#f6f8fa;padding:12px;overflow:auto;}
-  let nav =
-    #|<nav>
-    #|  <a href="/">home</a> |
-    #|  <a href="/readme">README</a> |
-    #|  <a href="/filer">filer</a>
-    #|</nav>
-  "<!doctype html><html><head><meta charset=\"utf-8\"><title>" +
-  escape_html(title) +
-  "</title><style>" +
-  style +
-  "</style></head><body>" +
-  nav +
-  "<main>" +
-  body_html +
-  "</main></body></html>"
-}
-
-///|
-fn escape_html(raw : String) -> String {
-  let buf = StringBuilder::new()
-  for c in raw {
-    match c {
-      '&' => buf.write_string("&amp;")
-      '<' => buf.write_string("&lt;")
-      '>' => buf.write_string("&gt;")
-      '"' => buf.write_string("&quot;")
-      '\'' => buf.write_string("&#39;")
-      _ => buf.write_char(c)
-    }
-  }
-  buf.to_string()
 }
