@@ -26,15 +26,22 @@ pub struct RepoState {
   files : Array[String]
   initial_path : String
   issues : Array[IssueSummary]
+  route_base : String
 }
 
 ///|
-pub fn RepoState::new(root : String) -> RepoState {
+pub fn RepoState::new(root : String, route_base? : String = "") -> RepoState {
   let resolved = @npath.resolve([root])
   let files = scan_repo_files(resolved, 240)
   let issues = load_repo_issues(resolved, 120)
   let initial_path = select_initial_path(files)
-  { root: resolved, files, initial_path, issues }
+  {
+    root: resolved,
+    files,
+    initial_path,
+    issues,
+    route_base: normalize_route_base(route_base),
+  }
 }
 
 ///|
@@ -99,15 +106,18 @@ pub fn RepoState::render_layout(
   body_html : String,
 ) -> String {
   let display_root = shorten_home_prefix(self.root)
+  let root_route = route_root(self.route_base)
+  let issues_route = route_issues(self.route_base)
+  let blob_route_prefix = route_blob_prefix(self.route_base)
   let header_nodes : Array[@luna.Node[Unit, String]] = [
-    @components.link("/", [@luna.text("bithub")]),
+    @components.link(root_route, [@luna.text("bithub")]),
     @luna.text(" | "),
-    @components.link("/issues", [@luna.text("issues")]),
+    @components.link(issues_route, [@luna.text("issues")]),
     @luna.text(" : " + display_root),
   ]
-  let nav_nodes = build_nav_nodes(self.files, selected_path)
+  let nav_nodes = build_nav_nodes(self.files, selected_path, blob_route_prefix)
   let main_nodes : Array[@luna.Node[Unit, String]] = [
-    @components.breadcrumb_from_path("/blob", [], selected_path),
+    @components.breadcrumb_from_path(blob_route_prefix, [], selected_path),
     @components.region(aria_label="file content", [@luna.raw_html(body_html)]),
   ]
   let footer_nodes : Array[@luna.Node[Unit, String]] = [
@@ -139,6 +149,8 @@ pub fn RepoState::render_layout(
       @components.main_content(main_nodes),
     ]),
     @components.contentinfo(footer_nodes),
+    @luna.raw_html("<script>" + tree_keyboard_script() + "</script>"),
+    @luna.raw_html("<script>" + split_resizer_script() + "</script>"),
   ])
   let css =
     #|:root{color-scheme:light dark;--bg:#f8fafc;--text:#0f172a;--panel:#ffffff;--border:#d1d5db;--link:#1d4ed8;--link-visited:#6d28d9;--pre-bg:#f3f4f6;--tree-guide:#93a7c9;}
@@ -178,19 +190,56 @@ pub fn RepoState::render_layout(
     #|pre{background:var(--pre-bg);padding:12px;overflow:auto;}
     #|code{font-family:ui-monospace,Menlo,monospace;}
     #|@media (max-width: 900px){html,body{height:auto;}body{padding-top:68px;padding-bottom:12px;overflow:auto;}footer{position:static;padding:8px 0 0;border-top:none;font-size:inherit;}.split-layout{display:flex;flex-direction:column;gap:12px;height:auto;overflow:visible;}.split-resizer{display:none;}.split-layout main{order:1;overflow:visible;padding-left:0;border-left:none;}.file-sidebar{order:2;height:auto;overflow:visible;padding-right:0;border-right:none;border-top:1px solid var(--border);padding-top:8px;}}
-  let doc = @lstatic.document(
-    head_children=[
-      @lstatic.meta(charset="utf-8"),
-      @lstatic.title("bithub"),
-      @lstatic.style_(css),
-    ],
-    body_children=[
-      page,
-      @luna.raw_html("<script>" + tree_keyboard_script() + "</script>"),
-      @luna.raw_html("<script>" + split_resizer_script() + "</script>"),
-    ],
-  )
-  @lstatic.render_document(doc)
+  let head = "<meta charset=\"utf-8\"><style>" + css + "</style>"
+  @sol.render_page(page, title="bithub", head~)
+}
+
+///|
+fn normalize_route_base(route_base : String) -> String {
+  let trimmed = route_base.trim(chars=" \n\r\t").to_string()
+  if trimmed.length() == 0 || trimmed == "/" {
+    return ""
+  }
+  let mut normalized = if trimmed.has_prefix("/") {
+    trimmed
+  } else {
+    "/" + trimmed
+  }
+  while normalized.has_suffix("/") && normalized.length() > 1 {
+    normalized = String::unsafe_substring(
+      normalized,
+      start=0,
+      end=normalized.length() - 1,
+    )
+  }
+  normalized
+}
+
+///|
+fn route_root(route_base : String) -> String {
+  if route_base.length() == 0 {
+    "/"
+  } else {
+    route_base
+  }
+}
+
+///|
+fn route_issues(route_base : String) -> String {
+  if route_base.length() == 0 {
+    "/issues"
+  } else {
+    route_base + "/issues"
+  }
+}
+
+///|
+fn route_blob_prefix(route_base : String) -> String {
+  if route_base.length() == 0 {
+    "/blob"
+  } else {
+    route_base + "/blob"
+  }
 }
 
 ///|
@@ -512,13 +561,16 @@ pub fn as_issues_html(issues : Array[IssueSummary]) -> String {
 fn build_nav_nodes(
   files : Array[String],
   selected_path : String,
+  blob_route_prefix : String,
 ) -> Array[@luna.Node[Unit, String]] {
   let limit = if files.length() < 120 { files.length() } else { 120 }
   let limited_files : Array[String] = []
   for i in 0..<limit {
     limited_files.push(files[i])
   }
-  let tree_nodes = build_tree_nodes(limited_files, "", selected_path)
+  let tree_nodes = build_tree_nodes(
+    limited_files, "", selected_path, blob_route_prefix,
+  )
   if files.length() > limit {
     tree_nodes.push(
       @luna.h("li", [("role", @luna.attr_static("treeitem"))], [
@@ -540,6 +592,7 @@ fn build_tree_nodes(
   files : Array[String],
   prefix : String,
   selected_path : String,
+  blob_route_prefix : String,
 ) -> Array[@luna.Node[Unit, String]] {
   let dir_names : Array[String] = []
   let file_entries : Array[(String, String)] = []
@@ -581,7 +634,9 @@ fn build_tree_nodes(
     if is_open {
       details_attrs.push(("open", @luna.attr_static("open")))
     }
-    let children = build_tree_nodes(files, dir_path, selected_path)
+    let children = build_tree_nodes(
+      files, dir_path, selected_path, blob_route_prefix,
+    )
     nodes.push(
       @luna.h(
         "li",
@@ -655,7 +710,7 @@ fn build_tree_nodes(
       file_name
     }
     let link_attrs : Array[(String, @luna.Attr[Unit, String])] = [
-      ("href", @luna.attr_static("/blob/" + file_path)),
+      ("href", @luna.attr_static(blob_route_prefix + "/" + file_path)),
       ("class", @luna.attr_static("file-tree-link")),
       ("tabindex", @luna.attr_static("-1")),
       ("data-tree-node", @luna.attr_static("1")),

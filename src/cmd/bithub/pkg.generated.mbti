@@ -2,15 +2,51 @@
 package "bit-vcs/bithub/cmd/bithub"
 
 // Values
+pub fn as_issues_html(Array[IssueSummary]) -> String
+
 pub fn as_view_html(String, String) -> String
+
+pub fn ensure_sol_reschedule_symbol() -> Unit
 
 pub fn extract_blob_path(String) -> String
 
+pub fn extract_first_http_url(String) -> String?
+
+pub fn issue_summary(String, String, String) -> IssueSummary
+
+pub fn load_repo_file(String, String) -> String?
+
+pub fn load_repo_issues(String, Int) -> Array[IssueSummary]
+
+pub fn parse_catalog_text(String) -> Array[(String, String)]
+
+pub fn parse_cli_options(Array[String]) -> CliOptions
+
+pub fn render_p2p_command(String, String, Int) -> String
+
+pub fn replace_path_prefix_with_tilde(String, String) -> String
+
 pub fn sanitize_rel_path(String) -> String?
+
+pub fn scan_repo_files(String, Int) -> Array[String]
 
 // Errors
 
 // Types and methods
+pub struct CliOptions {
+  repo : String
+  port : Int
+  enable_p2p : Bool
+  p2p_command_template : String?
+  catalog_path : String?
+}
+
+pub struct IssueSummary {
+  id : String
+  title : String
+  state : String
+}
+
 pub struct PageResponse {
   status : Int
   html : String
@@ -20,9 +56,12 @@ pub struct RepoState {
   root : String
   files : Array[String]
   initial_path : String
+  issues : Array[IssueSummary]
+  route_base : String
 }
-pub fn RepoState::new(String) -> Self
+pub fn RepoState::new(String, route_base? : String) -> Self
 pub fn RepoState::render_blob(Self, String) -> PageResponse
+pub fn RepoState::render_issues(Self) -> PageResponse
 pub fn RepoState::render_layout(Self, String, String) -> String
 pub fn RepoState::render_root(Self) -> PageResponse
 
