@@ -187,6 +187,32 @@ test('root opens README.md by default', async ({ page }) => {
   await expect(page.locator('main')).toContainText('Current Direction');
 });
 
+test('blob route returns SSR html payload with highlighted code', async ({ request }) => {
+  const response = await request.get('/blob/src/cmd/bithub/main.mbt');
+
+  expect(response.status()).toBe(200);
+  const html = await response.text();
+  expect(html).toContain('<main');
+  expect(html).toContain('pre class="highlight');
+  expect(html).toContain('src/cmd/bithub/main.mbt');
+});
+
+test('blob page is readable with javascript disabled', async ({ browser, baseURL }) => {
+  const context = await browser.newContext({
+    baseURL,
+    javaScriptEnabled: false,
+  });
+  const page = await context.newPage();
+
+  const response = await page.goto('/blob/src/cmd/bithub/main.mbt');
+  expect(response).not.toBeNull();
+  expect(response!.status()).toBe(200);
+  await expect(page.getByRole('banner')).toContainText('bithub');
+  await expect(page.getByRole('main')).toContainText('fn parse_port(raw : String)');
+
+  await context.close();
+});
+
 test('header is fixed to top', async ({ page }) => {
   await page.goto('/');
 
