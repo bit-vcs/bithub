@@ -24,6 +24,14 @@ pnpm install
 pnpm test:e2e
 ```
 
+### Project-wise E2E
+
+```bash
+pnpm test:e2e:viewer  # bithub viewer
+pnpm test:e2e:mars    # mars_http adapter SSR
+pnpm test:e2e:cf      # src/cmd/main fetch (Cloudflare-style)
+```
+
 ## Benchmark
 
 ```bash

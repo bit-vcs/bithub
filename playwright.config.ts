@@ -2,6 +2,7 @@ import { defineConfig } from '@playwright/test';
 
 const VIEWER_PORT = 4173;
 const MARS_HTTP_PORT = 4174;
+const MAIN_FETCH_PORT = 4175;
 
 export default defineConfig({
   testDir: './e2e',
@@ -26,6 +27,14 @@ export default defineConfig({
         trace: 'on-first-retry',
       },
     },
+    {
+      name: 'main-fetch-cloudflare',
+      testMatch: /main-fetch\.spec\.ts/,
+      use: {
+        baseURL: `http://127.0.0.1:${MAIN_FETCH_PORT}`,
+        trace: 'on-first-retry',
+      },
+    },
   ],
   webServer: [
     {
@@ -37,6 +46,12 @@ export default defineConfig({
     {
       command: `moon run src/cmd/main_ssr --target js -- ${MARS_HTTP_PORT}`,
       url: `http://127.0.0.1:${MARS_HTTP_PORT}`,
+      reuseExistingServer: !process.env.CI,
+      timeout: 120_000,
+    },
+    {
+      command: `moon run src/cmd/main_fetch_ssr --target js -- ${MAIN_FETCH_PORT}`,
+      url: `http://127.0.0.1:${MAIN_FETCH_PORT}`,
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
     },

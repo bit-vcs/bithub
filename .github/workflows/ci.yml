@@ -65,8 +65,14 @@ jobs:
       - name: Install Playwright browser
         run: pnpm exec playwright install --with-deps chromium
 
-      - name: Run Playwright tests
-        run: pnpm test:e2e
+      - name: Run Playwright viewer tests
+        run: pnpm test:e2e:viewer
+
+      - name: Run Playwright mars_http tests
+        run: pnpm test:e2e:mars
+
+      - name: Run Playwright Cloudflare fetch tests
+        run: pnpm test:e2e:cf
 
   bench:
     name: Moon benchmark

@@ -6,6 +6,7 @@
     "test:e2e": "playwright test",
     "test:e2e:mars": "playwright test --project mars-http-ssr",
     "test:e2e:viewer": "playwright test --project bithub-viewer",
+    "test:e2e:cf": "playwright test --project main-fetch-cloudflare",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:ui": "playwright test --ui"
   },
