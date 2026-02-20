@@ -552,6 +552,77 @@ extern "js" fn relay_publish_presence_async(
 ) -> Unit =
   #| (base_url, room, sender, viewer_url, name, auth_token) => {
   #|   try {
+  #|     const fs = require("node:fs");
+  #|     const crypto = require("node:crypto");
+  #|
+  #|     function readEnv(key) {
+  #|       if (typeof process === "undefined" || !process || !process.env) return "";
+  #|       const value = process.env[key];
+  #|       return typeof value === "string" ? value : "";
+  #|     }
+  #|
+  #|     function loadRelayPrivateKeyPem() {
+  #|       const inlinePem = readEnv("BITHUB_RELAY_SIGN_PRIVATE_KEY_PEM").trim();
+  #|       if (inlinePem.length > 0) {
+  #|         return inlinePem.replace(/\\n/g, "\n");
+  #|       }
+  #|       const pemPath = readEnv("BITHUB_RELAY_SIGN_PRIVATE_KEY_FILE").trim();
+  #|       if (pemPath.length > 0) {
+  #|         try {
+  #|           return fs.readFileSync(pemPath, "utf8");
+  #|         } catch (_e) {
+  #|           return "";
+  #|         }
+  #|       }
+  #|       return "";
+  #|     }
+  #|
+  #|     function canonicalize(value) {
+  #|       if (value === null) return "null";
+  #|       if (typeof value === "string") return JSON.stringify(value);
+  #|       if (typeof value === "number") {
+  #|         if (!Number.isFinite(value)) return "null";
+  #|         return JSON.stringify(value);
+  #|       }
+  #|       if (typeof value === "boolean") return value ? "true" : "false";
+  #|       if (Array.isArray(value)) {
+  #|         return `[${value.map((item) => canonicalize(item)).join(",")}]`;
+  #|       }
+  #|       if (value && typeof value === "object") {
+  #|         const keys = Object.keys(value).sort();
+  #|         const parts = keys.map((key) => `${JSON.stringify(key)}:${canonicalize(value[key])}`);
+  #|         return `{${parts.join(",")}}`;
+  #|       }
+  #|       return "null";
+  #|     }
+  #|
+  #|     function computePublishSignature({ sender, room, topic, id, payload }) {
+  #|       const pem = loadRelayPrivateKeyPem();
+  #|       if (pem.length === 0) return null;
+  #|       const privateKey = crypto.createPrivateKey({ key: pem });
+  #|       const publicKeyJwk = crypto.createPublicKey(privateKey).export({ format: "jwk" });
+  #|       const publicKey = publicKeyJwk && typeof publicKeyJwk.x === "string" ? publicKeyJwk.x : "";
+  #|       if (publicKey.length === 0) return null;
+  #|       const timestamp = Math.floor(Date.now() / 1000);
+  #|       const nonce = typeof crypto.randomUUID === "function"
+  #|         ? crypto.randomUUID()
+  #|         : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  #|       const payloadCanonical = canonicalize(payload);
+  #|       const payloadHash = crypto.createHash("sha256").update(payloadCanonical).digest("hex");
+  #|       const message = [
+  #|         "v1",
+  #|         `sender=${sender}`,
+  #|         `room=${room}`,
+  #|         `id=${id}`,
+  #|         `topic=${topic}`,
+  #|         `ts=${timestamp}`,
+  #|         `nonce=${nonce}`,
+  #|         `payload_sha256=${payloadHash}`,
+  #|       ].join("\\n");
+  #|       const signature = crypto.sign(null, Buffer.from(message), privateKey).toString("base64url");
+  #|       return { publicKey, signature, timestamp, nonce };
+  #|     }
+  #|
   #|     const base = String(base_url || "").replace(/\/+$/, "");
   #|     let hash = 0;
   #|     for (let i = 0; i < viewer_url.length; i += 1) {
@@ -576,6 +647,19 @@ extern "js" fn relay_publish_presence_async(
   #|         name,
   #|       },
   #|     };
+  #|     const signing = computePublishSignature({
+  #|       sender,
+  #|       room: room || "main",
+  #|       topic: "notify",
+  #|       id: eventId,
+  #|       payload: payload.payload,
+  #|     });
+  #|     if (signing) {
+  #|       headers["x-relay-public-key"] = signing.publicKey;
+  #|       headers["x-relay-signature"] = signing.signature;
+  #|       headers["x-relay-timestamp"] = String(signing.timestamp);
+  #|       headers["x-relay-nonce"] = signing.nonce;
+  #|     }
   #|     fetch(url.toString(), {
   #|       method: "POST",
   #|       headers,

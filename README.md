@@ -69,6 +69,8 @@ moon run src/cmd/bithub_bench --target js -- . 20
 - `--relay` 指定時は relay の `GET /api/v1/poll` を参照し、`kind=bithub.node` を一覧化
 - `--relay-sender` で relay publish 時の sender を指定（未指定は `BITHUB_RELAY_SENDER` / `USER`）
 - `BIT_RELAY_AUTH_TOKEN` を設定すると relay poll/publish に Authorization ヘッダを付与
+- `BITHUB_RELAY_SIGN_PRIVATE_KEY_PEM` または `BITHUB_RELAY_SIGN_PRIVATE_KEY_FILE` を設定すると
+  relay publish に署名ヘッダ（`x-relay-*`）を付与
 
 ### Catalog File (`--catalog`)
 
