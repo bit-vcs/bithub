@@ -74,6 +74,9 @@ jobs:
       - name: Run Playwright Cloudflare fetch tests
         run: pnpm test:e2e:cf
 
+      - name: Run Playwright CI webhook tests
+        run: pnpm test:e2e:ci
+
   bench:
     name: Moon benchmark
     runs-on: ubuntu-latest
