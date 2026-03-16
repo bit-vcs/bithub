@@ -134,24 +134,30 @@ pub fn ApiState::with_storage(store : &Storage) -> ApiState {
 /// Create ApiState populated from a real git repository on disk.
 /// Reads commits, branches, and files from the repo at `root`.
 pub fn ApiState::from_repo(root : String) -> ApiState {
-  let store : &Storage = MapStorage::new()
+  // Use FsStorage for persistence across requests (but not restarts unless on disk)
+  let data_dir = root + "/.bithub/data"
+  let store : &Storage = FsStorage::new(data_dir)
   let git_dir = root + "/.git"
   let node_fs = NodeFs::new()
-  // Scan and load files
-  let files = scan_files(root)
-  ignore(files.length())
-  load_files_into_storage(store, root, files)
-  // Load workflow files (may be in .github which scan_files skips)
-  match read_file_string(root + "/.github/workflows/ci.yml") {
-    Some(content) => store.set_string(".github/workflows/ci.yml", content)
-    None => ()
+  // Only load files if not already populated (check for README)
+  if store.get("README.md") is None {
+    let files = scan_files(root)
+    load_files_into_storage(store, root, files)
+    match read_file_string(root + "/.github/workflows/ci.yml") {
+      Some(content) => store.set_string(".github/workflows/ci.yml", content)
+      None => ()
+    }
   }
-  // Load git data from real repository
+  // Always refresh git data
   load_git_commits_into_storage(store, node_fs, git_dir)
   load_git_branches_into_storage(store, node_fs, git_dir)
-  // Add default auth token
-  store.set_string("auth/tokens/tok-owner-001", "identity=admin\nrole=owner")
-  store.set_string("auth/tokens/tok-write-001", "identity=ci-bot\nrole=write")
+  // Ensure auth tokens exist
+  if store.get("auth/tokens/tok-owner-001") is None {
+    store.set_string("auth/tokens/tok-owner-001", "identity=admin\nrole=owner")
+    store.set_string("auth/tokens/tok-write-001", "identity=ci-bot\nrole=write")
+    store.set_string("auth/tokens/tok-alice", "identity=agent-alice\nrole=owner")
+    store.set_string("auth/tokens/tok-bob", "identity=agent-bob\nrole=write")
+  }
   { store, }
 }
 
