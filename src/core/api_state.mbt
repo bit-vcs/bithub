@@ -133,31 +133,25 @@ pub fn ApiState::with_storage(store : &Storage) -> ApiState {
 ///|
 /// Create ApiState populated from a real git repository on disk.
 /// Reads commits, branches, and files from the repo at `root`.
-pub fn ApiState::from_repo(
-  root : String,
-  files : Array[String],
-) -> ApiState {
+pub fn ApiState::from_repo(root : String) -> ApiState {
   let store : &Storage = MapStorage::new()
   let git_dir = root + "/.git"
-  // Load README
-  match read_file_string(root + "/README.md") {
-    Some(content) => store.set_string("README.md", content)
-    None => ()
-  }
-  // Load files into storage
+  let node_fs = NodeFs::new()
+  // Scan and load files
+  let files = scan_files(root)
+  ignore(files.length())
   load_files_into_storage(store, root, files)
-  // Load workflow files
+  // Load workflow files (may be in .github which scan_files skips)
   match read_file_string(root + "/.github/workflows/ci.yml") {
     Some(content) => store.set_string(".github/workflows/ci.yml", content)
     None => ()
   }
-  // Load git data
-  let os_fs = @bit.TestFs::new()
-  // Try to use real filesystem for git operations
-  load_git_commits_into_storage(store, os_fs, git_dir)
-  load_git_branches_into_storage(store, os_fs, git_dir)
+  // Load git data from real repository
+  load_git_commits_into_storage(store, node_fs, git_dir)
+  load_git_branches_into_storage(store, node_fs, git_dir)
   // Add default auth token
   store.set_string("auth/tokens/tok-owner-001", "identity=admin\nrole=owner")
+  store.set_string("auth/tokens/tok-write-001", "identity=ci-bot\nrole=write")
   { store, }
 }
 

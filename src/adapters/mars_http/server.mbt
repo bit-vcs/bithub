@@ -61,6 +61,11 @@ pub fn create_app() -> @mars.Server {
 }
 
 ///|
+pub fn create_app_from_repo(root : String) -> @mars.Server {
+  create_app_with_storage(@core.ApiState::from_repo(root))
+}
+
+///|
 pub fn create_app_with_storage(api : @core.ApiState) -> @mars.Server {
   let app = @mars.Server::new()
   app.post(

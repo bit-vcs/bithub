@@ -13,7 +13,12 @@ pub fn load_git_commits_into_storage(
     fs,
     git_dir,
     max_count~,
-  ) catch { _ => return }
+  ) catch {
+    _ => {
+      println("load_git_commits: failed to read git log")
+      return
+    }
+  }
   let mut prev_sha = ""
   // entries are newest-first; we need to set parent links
   for i = 0; i < entries.length(); i = i + 1 {
@@ -43,7 +48,10 @@ pub fn load_git_branches_into_storage(
   git_dir : String,
 ) -> Unit {
   let (head_ref, branches) = @bitlib.list_branches(fs, git_dir) catch {
-    _ => return
+    _ => {
+      println("load_git_branches: failed to list branches")
+      return
+    }
   }
   let head_branch = match head_ref {
     Branch(name) => name
@@ -90,3 +98,134 @@ extern "js" fn read_file_string(path : String) -> String? =
   #|     return undefined;
   #|   }
   #| }
+
+// ---- Node.js RepoFileSystem adapter ----
+
+///|
+/// NodeFs: implements @bit.RepoFileSystem using Node.js fs module.
+/// Allows bitlib to read real git repositories from disk.
+pub struct NodeFs {
+  _dummy : Int
+}
+
+///|
+pub fn NodeFs::new() -> NodeFs {
+  { _dummy: 0 }
+}
+
+///|
+impl @bit.RepoFileSystem for NodeFs with read_file(_self, path) {
+  match node_read_file_safe(path) {
+    Some(bytes) => bytes
+    None => raise @bit.GitError::IoError("read_file failed: " + path)
+  }
+}
+
+///|
+impl @bit.RepoFileSystem for NodeFs with readdir(_self, path) {
+  node_readdir_safe(path)
+}
+
+///|
+impl @bit.RepoFileSystem for NodeFs with is_dir(_self, path) {
+  node_is_dir(path)
+}
+
+///|
+impl @bit.RepoFileSystem for NodeFs with is_file(_self, path) {
+  node_is_file(path)
+}
+
+///|
+extern "js" fn node_read_file_safe(path : String) -> Bytes? =
+  #| (path) => {
+  #|   try {
+  #|     const fs = require("node:fs");
+  #|     const buf = fs.readFileSync(path);
+  #|     return new Uint8Array(buf);
+  #|   } catch {
+  #|     return undefined;
+  #|   }
+  #| }
+
+///|
+extern "js" fn node_readdir_safe(path : String) -> Array[String] =
+  #| (path) => {
+  #|   try {
+  #|     const fs = require("node:fs");
+  #|     return fs.readdirSync(path);
+  #|   } catch {
+  #|     return [];
+  #|   }
+  #| }
+
+///|
+extern "js" fn node_is_dir(path : String) -> Bool =
+  #| (path) => {
+  #|   try {
+  #|     const fs = require("node:fs");
+  #|     return fs.statSync(path).isDirectory();
+  #|   } catch { return false; }
+  #| }
+
+///|
+extern "js" fn node_is_file(path : String) -> Bool =
+  #| (path) => {
+  #|   try {
+  #|     const fs = require("node:fs");
+  #|     return fs.statSync(path).isFile();
+  #|   } catch { return false; }
+  #| }
+
+///|
+extern "js" fn scan_readdir(path : String) -> Array[String] =
+  #| (path) => {
+  #|   try {
+  #|     const fs = require("node:fs");
+  #|     return fs.readdirSync(path);
+  #|   } catch {
+  #|     return [];
+  #|   }
+  #| }
+
+///|
+/// Scan files in a directory recursively, skipping common non-source dirs.
+pub fn scan_files(root : String, limit~ : Int = 200) -> Array[String] {
+  let files : Array[String] = []
+  scan_files_recursive(root, "", files, limit)
+  files
+}
+
+///|
+fn scan_files_recursive(
+  root : String,
+  prefix : String,
+  files : Array[String],
+  limit : Int,
+) -> Unit {
+  if files.length() >= limit {
+    return
+  }
+  let dir = if prefix.length() == 0 { root } else { root + "/" + prefix }
+  let entries = scan_readdir(dir)
+  entries.sort_by(fn(a, b) { String::compare(a, b) })
+  for name in entries {
+    if files.length() >= limit {
+      return
+    }
+    if name.has_prefix(".") ||
+      name == "node_modules" ||
+      name == "_build" ||
+      name == ".mooncakes" ||
+      name == "target" {
+      continue
+    }
+    let rel = if prefix.length() == 0 { name } else { prefix + "/" + name }
+    let full = root + "/" + rel
+    if node_is_file(full) {
+      files.push(rel)
+    } else if node_is_dir(full) {
+      scan_files_recursive(root, rel, files, limit)
+    }
+  }
+}
