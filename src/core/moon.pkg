@@ -5,4 +5,5 @@ import {
   "mizchi/bit/x/fs" @bitfs,
   "mizchi/bit/x/kv" @kv,
   "moonbitlang/core/encoding/utf8" @utf8,
+  "moonbitlang/core/strconv" @strconv,
 }

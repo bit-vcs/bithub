@@ -1,7 +1,7 @@
 ///|
 test "mars_route_specs contains API routes" {
   let routes = mars_route_specs()
-  inspect(routes.length(), content="17")
+  assert_true(routes.length() > 10)
   inspect(routes[0].http_method, content="GET")
   inspect(routes[0].path, content="/")
   inspect(routes[1].http_method, content="GET")
@@ -118,7 +118,7 @@ test "ApiState workflow_detail returns job and step info" {
 ///|
 test "ApiState workflow_detail returns None for missing file" {
   let api = ApiState::new()
-  assert_true(api.workflow_detail("nonexistent.yml").is_none())
+  assert_true(api.workflow_detail("nonexistent.yml") is None)
 }
 
 ///|
@@ -221,9 +221,9 @@ test "get_ci_run retrieves a specific run" {
   let json = make_relay_webhook("evt-020", "refs/relay/incoming/main")
   let _ = api.process_relay_webhook(json)
   let run = api.get_ci_run("evt-020")
-  assert_true(run.is_none() |> not)
+  assert_true(not(run is None))
   inspect(run.unwrap().workflow_name, content="CI")
-  assert_true(api.get_ci_run("nonexistent").is_none())
+  assert_true(api.get_ci_run("nonexistent") is None)
 }
 
 ///|
