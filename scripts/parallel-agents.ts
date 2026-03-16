@@ -1,21 +1,23 @@
 /**
- * Parallel agent runner: spawns multiple agents on different tasks simultaneously.
+ * Parallel agent runner v2.
  *
- * Creates issues, runs agents in parallel, validates combined result.
+ * Spawns agents on meaningful refactoring/improvement tasks.
+ * Each task targets different files to avoid conflicts.
+ * Validates combined result with moon check + test.
+ * Rolls back on failure.
  *
  * Usage:
  *   BITHUB_URL=http://127.0.0.1:4174 npx tsx scripts/parallel-agents.ts
  */
 
-import { execSync, spawn, type ChildProcess } from "node:child_process";
+import { execSync, spawn } from "node:child_process";
 
 const BITHUB_URL = process.env.BITHUB_URL || "http://127.0.0.1:4174";
 const MODEL = process.env.MODEL || "anthropic/claude-sonnet-4";
-const MAX_TURNS = process.env.MAX_TURNS || "12";
+const MAX_TURNS = process.env.MAX_TURNS || "15";
 const REPO_ROOT = process.cwd();
 
-// ---- Task definitions ----
-// Each task targets a DIFFERENT file to minimize conflicts
+// ---- Meaningful tasks targeting different files ----
 
 const TASKS: Array<{
   title: string;
@@ -24,53 +26,52 @@ const TASKS: Array<{
   token: string;
 }> = [
   {
-    title: "Add unit tests for simple_hash in api_state.mbt",
-    body: `The simple_hash function (around line 1310 in src/core/api_state.mbt) generates hash values but has no tests.
+    title: "Add whitebox tests for string_contains in api_state",
+    body: `The string_contains function (private, in src/core/api_state.mbt around line 900) is used for code search. It needs whitebox tests.
 
-Steps:
-1. search for "fn simple_hash" to find exact location
-2. patch_file to change "fn simple_hash" to "pub fn simple_hash"
-3. Create NEW file src/core/hash_test.mbt with tests:
-   - simple_hash("") returns a number
-   - simple_hash("hello") returns consistent value
-   - simple_hash("a") != simple_hash("b")
-   - same input gives same output
-4. moon check --target js
-5. moon test --target js`,
+Create src/core/search_wbtest.mbt (whitebox test file — can access private functions).
+Test cases:
+- Empty needle matches any string
+- Exact match
+- Substring at start, middle, end
+- No match
+- Case sensitivity (should be case-sensitive)
+- Needle longer than haystack returns false
+
+Use inspect() for verifiable assertions. Run moon check + moon test.`,
     agent: "agent-alpha",
     token: "tok-bob",
   },
   {
-    title: "Add unit tests for xml_escape in api_state.mbt",
-    body: `The xml_escape function (around line 1532 in src/core/api_state.mbt) escapes XML special chars but has no tests.
+    title: "Add whitebox tests for count_files in api_state",
+    body: `The count_files function (private, in src/core/api_state.mbt) recursively counts files in Storage. It needs whitebox tests.
 
+Create src/core/stats_wbtest.mbt (whitebox test — can access private functions).
 Steps:
-1. search for "fn xml_escape" to find exact location
-2. patch_file to change "fn xml_escape" to "pub fn xml_escape" if not already pub
-3. Create NEW file src/core/xml_test.mbt with tests:
-   - xml_escape("") returns ""
-   - xml_escape("hello") returns "hello"
-   - xml_escape("&") returns "&amp;"
-   - xml_escape("<>") returns "&lt;&gt;"
-   - xml_escape("a & b") returns "a &amp; b"
-4. moon check --target js
-5. moon test --target js`,
+1. search for "fn count_files" to find the exact signature
+2. Create tests using MapStorage:
+   - Empty storage returns 0
+   - Single file returns 1
+   - Files in subdirectories are counted
+   - Directories themselves are not counted
+3. moon check + moon test`,
     agent: "agent-beta",
     token: "tok-bob",
   },
   {
-    title: "Fix deprecated fn syntax in fs_storage.mbt",
-    body: `Line 18 in src/core/fs_storage.mbt uses deprecated method syntax:
-fn fs_key_path(self : FsStorage, key : String) -> String
+    title: "Fix deprecated f!() syntax in ci.mbt",
+    body: `Line 486 in src/core/ci.mbt has deprecated syntax:
+    @strconv.parse_int!(idx_str)
+should be:
+    @strconv.parse_int(idx_str)
 
-Change to:
-fn FsStorage::fs_key_path(self : FsStorage, key : String) -> String
+(The ! suffix is no longer needed for error-raising calls.)
 
 Steps:
-1. read_file("src/core/fs_storage.mbt", start_line=16, end_line=20)
-2. patch_file to replace line 18 with the new syntax
-3. moon check --target js
-4. moon test --target js`,
+1. read_file("src/core/ci.mbt", start_line=484, end_line=490)
+2. patch_file to remove the ! from parse_int!
+3. moon check --target js to verify
+4. moon test --target js to verify`,
     agent: "agent-gamma",
     token: "tok-bob",
   },
@@ -94,6 +95,15 @@ async function bithubPost(
   return (await res.json()) as Record<string, unknown>;
 }
 
+function shell(cmd: string): string {
+  try {
+    return execSync(cmd, { cwd: REPO_ROOT, timeout: 120_000, encoding: "utf-8" });
+  } catch (err: unknown) {
+    const e = err as { stdout?: string; stderr?: string };
+    return (e.stdout || "") + "\n" + (e.stderr || "");
+  }
+}
+
 function runAgent(
   issueId: string,
   agentName: string,
@@ -101,159 +111,111 @@ function runAgent(
 ): Promise<{ agent: string; issueId: string; exitCode: number; output: string }> {
   return new Promise((resolve) => {
     const chunks: string[] = [];
-    const proc = spawn(
-      "npx",
-      ["tsx", "scripts/agent-harness.ts"],
-      {
-        cwd: REPO_ROOT,
-        env: {
-          ...process.env,
-          BITHUB_URL,
-          ISSUE_ID: issueId,
-          MODEL,
-          MAX_TURNS,
-          AGENT_NAME: agentName,
-          AGENT_TOKEN: token,
-          REPO_ROOT,
-        },
-        stdio: ["ignore", "pipe", "pipe"],
+    const proc = spawn("npx", ["tsx", "scripts/agent-harness.ts"], {
+      cwd: REPO_ROOT,
+      env: {
+        ...process.env,
+        BITHUB_URL,
+        ISSUE_ID: issueId,
+        MODEL,
+        MAX_TURNS,
+        AGENT_NAME: agentName,
+        AGENT_TOKEN: token,
+        REPO_ROOT,
       },
-    );
+      stdio: ["ignore", "pipe", "pipe"],
+    });
 
     proc.stdout?.on("data", (d: Buffer) => chunks.push(d.toString()));
     proc.stderr?.on("data", (d: Buffer) => chunks.push(d.toString()));
-
     proc.on("close", (code) => {
-      resolve({
-        agent: agentName,
-        issueId,
-        exitCode: code || 0,
-        output: chunks.join(""),
-      });
+      resolve({ agent: agentName, issueId, exitCode: code || 0, output: chunks.join("") });
     });
 
-    // Timeout after 3 minutes
-    setTimeout(() => {
-      proc.kill("SIGTERM");
-    }, 180_000);
+    setTimeout(() => proc.kill("SIGTERM"), 180_000);
   });
 }
 
 // ---- Main ----
 
 async function main() {
-  console.log("=== Parallel Agent Runner ===");
-  console.log(`Model: ${MODEL}`);
-  console.log(`Tasks: ${TASKS.length}`);
-  console.log(`Bithub: ${BITHUB_URL}`);
-  console.log("");
+  console.log("=== Parallel Agent Runner v2 ===");
+  console.log(`Model: ${MODEL} | Tasks: ${TASKS.length}\n`);
 
-  // Verify server
+  // Verify
   const health = await fetch(`${BITHUB_URL}/healthz`);
-  if (!health.ok) {
-    console.error("Server not running");
-    process.exit(1);
-  }
+  if (!health.ok) { console.error("Server not running"); process.exit(1); }
 
-  // Phase 1: Create issues
+  // Save clean state
+  shell("git stash --include-untracked -m 'parallel-backup' 2>/dev/null");
+
+  // Create issues
   console.log("--- Creating issues ---");
   const issueIds: string[] = [];
   for (const task of TASKS) {
-    const result = await bithubPost(
-      "/api/issues",
-      { title: task.title, body: task.body, author: task.agent },
-      task.token,
-    );
-    issueIds.push(result.id as string);
-    console.log(`  Issue #${result.id}: ${task.title.slice(0, 50)}... (${task.agent})`);
+    const r = await bithubPost("/api/issues", { title: task.title, body: task.body, author: task.agent }, task.token);
+    issueIds.push(r.id as string);
+    console.log(`  #${r.id} ${task.title.slice(0, 60)} → ${task.agent}`);
   }
 
-  // Phase 2: Run agents in parallel
-  console.log("\n--- Launching agents in parallel ---");
-  const startTime = Date.now();
-
-  const promises = TASKS.map((task, i) =>
-    runAgent(issueIds[i], task.agent, task.token),
+  // Launch parallel
+  console.log("\n--- Launching agents ---");
+  const t0 = Date.now();
+  const results = await Promise.all(
+    TASKS.map((task, i) => runAgent(issueIds[i], task.agent, task.token)),
   );
+  const elapsed = ((Date.now() - t0) / 1000).toFixed(1);
+  console.log(`\n--- All finished in ${elapsed}s ---\n`);
 
-  const results = await Promise.all(promises);
-
-  const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-  console.log(`\n--- All agents finished in ${elapsed}s ---\n`);
-
-  // Phase 3: Report individual results
+  // Report
   for (const r of results) {
-    const lastLines = r.output.split("\n").slice(-5).join("\n");
-    const turnCount = (r.output.match(/--- Turn/g) || []).length;
+    const turns = (r.output.match(/--- Turn/g) || []).length;
     const hasDone = r.output.includes("DONE:");
-    const status = r.exitCode === 0 && hasDone ? "✓" : r.exitCode === 0 ? "⚠" : "✗";
-    console.log(`${status} ${r.agent} (Issue #${r.issueId}): ${turnCount} turns, exit ${r.exitCode}`);
+    const hasRollback = r.output.includes("Rolling back");
+    const icon = hasDone ? "✓" : hasRollback ? "✗" : "⚠";
+    console.log(`${icon} ${r.agent} (#${r.issueId}): ${turns} turns`);
     if (hasDone) {
-      const doneMatch = r.output.match(/DONE: (.*?)$/m);
-      if (doneMatch) console.log(`  Summary: ${doneMatch[1].slice(0, 120)}`);
-    }
-    if (r.exitCode !== 0) {
-      console.log(`  Last output: ${lastLines.slice(0, 200)}`);
+      const m = r.output.match(/DONE: (.*?)$/m);
+      if (m) console.log(`  ${m[1].slice(0, 120)}`);
     }
   }
 
-  // Phase 4: Validate combined result
-  console.log("\n--- Validating combined result ---");
-  try {
-    const checkOutput = execSync("moon check --target js 2>&1", {
-      cwd: REPO_ROOT,
-      encoding: "utf-8",
-      timeout: 60_000,
-    });
-    const hasErrors = checkOutput.includes("errors");
-    console.log(`moon check: ${hasErrors ? "FAILED" : "OK"}`);
-    if (hasErrors) {
-      const errorLines = checkOutput.split("\n").filter(l => l.includes("Error"));
-      console.log(`  ${errorLines.slice(0, 5).join("\n  ")}`);
-    }
-  } catch (err) {
-    const e = err as { stdout?: string; stderr?: string };
-    console.log("moon check: FAILED");
-    const out = ((e.stdout || "") + (e.stderr || "")).split("\n").filter(l => l.includes("Error"));
-    console.log(`  ${out.slice(0, 5).join("\n  ")}`);
+  // Validate
+  console.log("\n--- Combined validation ---");
+  const checkOut = shell("moon check --target js 2>&1");
+  const checkOk = checkOut.includes("0 errors");
+  console.log(`moon check: ${checkOk ? "OK" : "FAILED"}`);
+
+  if (!checkOk) {
+    const errs = checkOut.split("\n").filter(l => l.includes("Error:")).slice(0, 5);
+    errs.forEach(e => console.log(`  ${e}`));
   }
 
-  try {
-    const testOutput = execSync("moon test --target js 2>&1", {
-      cwd: REPO_ROOT,
-      encoding: "utf-8",
-      timeout: 120_000,
-    });
-    const totalMatch = testOutput.match(/Total tests: (\d+), passed: (\d+)/);
-    if (totalMatch) {
-      console.log(`moon test: ${totalMatch[2]}/${totalMatch[1]} passed`);
-    }
-  } catch (err) {
-    const e = err as { stdout?: string };
-    const totalMatch = (e.stdout || "").match(/Total tests: (\d+), passed: (\d+), failed: (\d+)/);
-    if (totalMatch) {
-      console.log(`moon test: ${totalMatch[2]}/${totalMatch[1]} passed, ${totalMatch[3]} failed`);
-    } else {
-      console.log("moon test: FAILED");
-    }
+  const testOut = shell("moon test --target js 2>&1");
+  const testMatch = testOut.match(/Total tests: (\d+), passed: (\d+), failed: (\d+)/);
+  if (testMatch) {
+    console.log(`moon test: ${testMatch[2]}/${testMatch[1]} passed, ${testMatch[3]} failed`);
   }
 
-  // Phase 5: Show file changes
-  console.log("\n--- File changes ---");
-  try {
-    const status = execSync("git diff --stat && git status --short | grep '??' | head -10", {
-      cwd: REPO_ROOT,
-      encoding: "utf-8",
-    });
-    console.log(status);
-  } catch {
-    console.log("(no changes)");
-  }
+  // Show changes
+  console.log("\n--- Changes ---");
+  console.log(shell("git diff --stat"));
+  const untracked = shell("git status --short 2>/dev/null").split("\n").filter(l => l.startsWith("??"));
+  if (untracked.length) console.log(untracked.join("\n"));
 
-  console.log("\n=== Done ===");
+  const allGood = checkOk && testMatch && testMatch[3] === "0";
+  if (!allGood) {
+    console.log("\n⚠ Validation failed — rolling back");
+    shell("git checkout -- . 2>/dev/null");
+    shell("git clean -fd src/ e2e/ 2>/dev/null");
+  }
+  shell("git stash pop 2>/dev/null");
+
+  console.log(`\n=== ${allGood ? "SUCCESS" : "ROLLED BACK"} ===`);
 }
 
 main().catch((err) => {
-  console.error("Runner failed:", err);
+  console.error("Failed:", err);
+  shell("git checkout -- . 2>/dev/null && git clean -fd src/ 2>/dev/null && git stash pop 2>/dev/null");
   process.exit(1);
 });

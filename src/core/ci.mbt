@@ -483,7 +483,7 @@ fn deserialize_ci_step_run(text : String) -> CiStepRun? {
     return None
   }
   let idx = try {
-    @strconv.parse_int!(idx_str)
+    @strconv.parse_int(idx_str)
   } catch {
     _ => return None
   }
