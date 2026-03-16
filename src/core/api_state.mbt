@@ -339,6 +339,9 @@ fn seed_files(kv : &Storage) -> Unit {
     "issues/2/body",
     "The Storage trait is ready. We need an R2 implementation that:\n- Uses Cloudflare R2 binding via FFI\n- Maps get/set_string/list/has to R2 API\n- Handles prefix listing efficiently",
   )
+  // Seed: tags
+  kv.set_string("git/tags/v0.1.0", "sha=ccc3456\nmessage=Initial release")
+  kv.set_string("git/tags/v0.1.1", "sha=abc1234\nmessage=Bug fixes and CI improvements")
   // Seed: auth tokens
   kv.set_string("auth/tokens/tok-owner-001", "identity=mizchi\nrole=owner")
   kv.set_string("auth/tokens/tok-write-001", "identity=ci-bot\nrole=write")
@@ -1291,6 +1294,245 @@ pub fn ApiState::close_pull_request(
     }
     None => false
   }
+}
+
+// ---- File Edit ----
+
+///|
+pub struct FileEditResult {
+  ok : Bool
+  commit_sha : String
+  error : String
+}
+
+///|
+pub fn ApiState::edit_file(
+  self : ApiState,
+  path : String,
+  content : String,
+  message : String,
+  author : String,
+  timestamp : String,
+) -> FileEditResult {
+  if path.length() == 0 {
+    return { ok: false, commit_sha: "", error: "empty path" }
+  }
+  if message.length() == 0 {
+    return { ok: false, commit_sha: "", error: "empty commit message" }
+  }
+  // Write file to storage
+  self.store.set_string(path, content)
+  // Create a commit entry for this edit
+  let commits = self.list_commits()
+  let parent = if commits.length() > 0 { commits[0].sha } else { "" }
+  let sha = "edit-" + timestamp + "-" + simple_hash(path + content)
+  let meta = [
+    "message=" + message,
+    "author=" + author,
+    "timestamp=" + timestamp,
+    "parent=" + parent,
+  ].join("\n")
+  self.store.set_string("git/commits/" + sha, meta)
+  // Record diff
+  self.store.set_string(
+    "git/diffs/" + sha + "/0",
+    "path=" + path + "\nkind=modified\npatch=(edited via web)",
+  )
+  { ok: true, commit_sha: sha, error: "" }
+}
+
+///|
+fn simple_hash(input : String) -> String {
+  let mut h = 5381
+  for c in input {
+    h = h * 33 + c.to_int()
+  }
+  if h < 0 { h = -h }
+  h.to_string()
+}
+
+// ---- Tags ----
+
+///|
+pub struct TagEntry {
+  name : String
+  sha : String
+  message : String
+}
+
+///|
+pub fn ApiState::list_tags(self : ApiState) -> Array[TagEntry] {
+  let names = self.store.list("git/tags")
+  let entries : Array[TagEntry] = []
+  for name in names {
+    match self.store.get("git/tags/" + name) {
+      Some(bytes) => {
+        let fields = parse_kv_fields(@utf8.decode_lossy(bytes))
+        entries.push({
+          name,
+          sha: fields.get("sha").unwrap_or(""),
+          message: fields.get("message").unwrap_or(""),
+        })
+      }
+      None => ()
+    }
+  }
+  entries.sort_by(fn(a, b) { String::compare(b.name, a.name) })
+  entries
+}
+
+// ---- Stats ----
+
+///|
+pub struct RepoStats {
+  file_count : Int
+  commit_count : Int
+  branch_count : Int
+  issue_count : Int
+  pr_count : Int
+  contributors : Array[(String, Int)] // (author, commit_count)
+}
+
+///|
+pub fn ApiState::repo_stats(self : ApiState) -> RepoStats {
+  let commits = self.list_commits()
+  let author_counts : Map[String, Int] = {}
+  for commit in commits {
+    let name = match commit.author.find(" <") {
+      Some(i) => String::unsafe_substring(commit.author, start=0, end=i)
+      None => commit.author
+    }
+    let current = author_counts.get(name).unwrap_or(0)
+    author_counts.set(name, current + 1)
+  }
+  let contributors : Array[(String, Int)] = []
+  for name, count in author_counts {
+    contributors.push((name, count))
+  }
+  contributors.sort_by(fn(a, b) { b.1 - a.1 })
+  // Count files recursively
+  let file_count = count_files(self.store, "")
+  {
+    file_count,
+    commit_count: commits.length(),
+    branch_count: self.list_branches().length(),
+    issue_count: self.list_issues().length(),
+    pr_count: self.list_pull_requests().length(),
+    contributors,
+  }
+}
+
+///|
+fn count_files(store : &Storage, prefix : String) -> Int {
+  let mut count = 0
+  let names = store.list(prefix)
+  for name in names {
+    let full = if prefix.length() == 0 { name } else { prefix + "/" + name }
+    if store.has(full) {
+      count += 1
+    } else {
+      count += count_files(store, full)
+    }
+  }
+  count
+}
+
+// ---- PR Review Comments ----
+
+///|
+pub fn ApiState::add_pr_comment(
+  self : ApiState,
+  pr_id : String,
+  author : String,
+  body : String,
+  timestamp : String,
+) -> Bool {
+  if self.store.get("prs/" + pr_id + "/meta") is None {
+    return false
+  }
+  let existing = self.store.list("prs/" + pr_id + "/comments")
+  let next_id = existing.length().to_string()
+  let comment = [
+    "author=" + author,
+    "body=" + body,
+    "created_at=" + timestamp,
+  ].join("\n")
+  self.store.set_string("prs/" + pr_id + "/comments/" + next_id, comment)
+  true
+}
+
+///|
+pub fn ApiState::list_pr_comments(
+  self : ApiState,
+  pr_id : String,
+) -> Array[IssueComment] {
+  let comment_ids = self.store.list("prs/" + pr_id + "/comments")
+  let comments : Array[IssueComment] = []
+  for cid in comment_ids {
+    match self.store.get("prs/" + pr_id + "/comments/" + cid) {
+      Some(cbytes) => {
+        let cf = parse_kv_fields(@utf8.decode_lossy(cbytes))
+        comments.push({
+          author: cf.get("author").unwrap_or(""),
+          body: cf.get("body").unwrap_or(""),
+          created_at: cf.get("created_at").unwrap_or(""),
+        })
+      }
+      None => ()
+    }
+  }
+  comments
+}
+
+// ---- RSS Feed ----
+
+///|
+pub fn ApiState::activity_rss(
+  self : ApiState,
+  base_url : String,
+) -> String {
+  let events = self.activity_feed(limit=20)
+  let sb = StringBuilder::new()
+  sb.write_string("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n")
+  sb.write_string("<rss version=\"2.0\">\n<channel>\n")
+  sb.write_string("<title>bithub activity</title>\n")
+  sb.write_string("<link>" + base_url + "</link>\n")
+  sb.write_string("<description>Recent activity</description>\n")
+  for event in events {
+    let path = match event.kind {
+      "commit" => "/commit/" + event.id
+      "ci_run" => "/actions/runs/" + event.id
+      "issue" => "/issues/" + event.id
+      "pr" => "/pulls/" + event.id
+      _ => "/"
+    }
+    let link = base_url + path
+    sb.write_string("<item>\n")
+    sb.write_string("<title>" + xml_escape(event.title) + "</title>\n")
+    sb.write_string("<link>" + link + "</link>\n")
+    sb.write_string(
+      "<description>" + xml_escape(event.detail) + "</description>\n",
+    )
+    sb.write_string("<guid>" + link + "</guid>\n")
+    sb.write_string("</item>\n")
+  }
+  sb.write_string("</channel>\n</rss>")
+  sb.to_string()
+}
+
+///|
+fn xml_escape(s : String) -> String {
+  let sb = StringBuilder::new()
+  for c in s {
+    match c {
+      '&' => sb.write_string("&amp;")
+      '<' => sb.write_string("&lt;")
+      '>' => sb.write_string("&gt;")
+      '"' => sb.write_string("&quot;")
+      _ => sb.write_char(c)
+    }
+  }
+  sb.to_string()
 }
 
 // ---- Blame ----

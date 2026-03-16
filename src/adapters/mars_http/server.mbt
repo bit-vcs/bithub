@@ -274,6 +274,108 @@ pub fn create_app_with_storage(api : @core.ApiState) -> @mars.Server {
     }),
   )
   app.post(
+    "/api/files",
+    @mars.handler(fn(ctx) {
+      guard require_write(api, ctx) is Some(token_info) else { return }
+      match ctx.body_json() {
+        Some(json) => {
+          guard json is Object(obj) else {
+            let e : Map[String, Json] = {}
+            e.set("error", "invalid payload".to_json())
+            return ctx.json(e.to_json(), status=400)
+          }
+          let path = match obj.get("path") {
+            Some(String(s)) => s
+            _ => {
+              let e : Map[String, Json] = {}
+              e.set("error", "missing path".to_json())
+              return ctx.json(e.to_json(), status=400)
+            }
+          }
+          let content = match obj.get("content") {
+            Some(String(s)) => s
+            _ => {
+              let e : Map[String, Json] = {}
+              e.set("error", "missing content".to_json())
+              return ctx.json(e.to_json(), status=400)
+            }
+          }
+          let message = match obj.get("message") {
+            Some(String(s)) => s
+            _ => "Edit " + path
+          }
+          let author = match obj.get("author") {
+            Some(String(s)) => s
+            _ => token_info.identity
+          }
+          let timestamp = timestamp_or_now(
+            match obj.get("timestamp") {
+              Some(String(s)) => s
+              _ => ""
+            },
+          )
+          let result = api.edit_file(path, content, message, author, timestamp)
+          let resp : Map[String, Json] = {}
+          resp.set("ok", result.ok.to_json())
+          if result.ok {
+            resp.set("commit_sha", result.commit_sha.to_json())
+          } else {
+            resp.set("error", result.error.to_json())
+          }
+          ctx.json(resp.to_json())
+        }
+        None => {
+          let e : Map[String, Json] = {}
+          e.set("error", "invalid json".to_json())
+          ctx.json(e.to_json(), status=400)
+        }
+      }
+    }),
+  )
+  app.post(
+    "/api/pulls/:id/comments",
+    @mars.handler(fn(ctx) {
+      guard require_write(api, ctx) is Some(token_info) else { return }
+      let pr_id = ctx.param("id").unwrap_or("")
+      match ctx.body_json() {
+        Some(json) => {
+          guard json is Object(obj) else {
+            let e : Map[String, Json] = {}
+            e.set("error", "invalid payload".to_json())
+            return ctx.json(e.to_json(), status=400)
+          }
+          let body = match obj.get("body") {
+            Some(String(s)) => s
+            _ => {
+              let e : Map[String, Json] = {}
+              e.set("error", "missing body".to_json())
+              return ctx.json(e.to_json(), status=400)
+            }
+          }
+          let author = match obj.get("author") {
+            Some(String(s)) => s
+            _ => token_info.identity
+          }
+          let timestamp = timestamp_or_now(
+            match obj.get("timestamp") {
+              Some(String(s)) => s
+              _ => ""
+            },
+          )
+          let ok = api.add_pr_comment(pr_id, author, body, timestamp)
+          let resp : Map[String, Json] = {}
+          resp.set("ok", ok.to_json())
+          ctx.json(resp.to_json())
+        }
+        None => {
+          let e : Map[String, Json] = {}
+          e.set("error", "invalid json".to_json())
+          ctx.json(e.to_json(), status=400)
+        }
+      }
+    }),
+  )
+  app.post(
     "/api/issues/:id/state",
     @mars.handler(fn(ctx) {
       guard require_write(api, ctx) is Some(_) else { return }
@@ -472,6 +574,20 @@ pub fn create_app_with_storage(api : @core.ApiState) -> @mars.Server {
         )
         let page = render_pull_detail_page(api, id)
         return ctx.html(page.html, status=page.status)
+      }
+      if route == "/tags" {
+        return ctx.html(render_tags_page(api), status=200)
+      }
+      if route == "/stats" {
+        return ctx.html(render_stats_page(api), status=200)
+      }
+      if route == "/feed.xml" {
+        let base_url = match ctx.header("Host") {
+          Some(host) => "https://" + host
+          None => ""
+        }
+        ctx.set_header("Content-Type", "application/rss+xml; charset=utf-8")
+        return ctx.text(api.activity_rss(base_url))
       }
       if route == "/blame" {
         let path = query_param(raw_path, "path").unwrap_or("")
@@ -793,6 +909,9 @@ fn render_layout(
     #|footer{position:fixed;left:0;right:0;bottom:0;background:var(--panel);border-top:1px solid var(--border);padding:4px 14px;font-size:12px;}
     #|a{color:var(--link);}
     #|pre.source-code{overflow:auto;background:var(--pre);padding:12px;border-radius:6px;}
+    #|.diff-add{color:#22863a;background:#f0fff4;}
+    #|.diff-del{color:#cb2431;background:#ffeef0;}
+    #|@media (prefers-color-scheme: dark){.diff-add{color:#85e89d;background:#144620;}.diff-del{color:#f97583;background:#3c1f23;}}
     #|code{font-family:ui-monospace,Menlo,monospace;}
     #|.wf-table{width:100%;border-collapse:collapse;}.wf-table th,.wf-table td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--border);}.wf-table th{font-weight:600;}
     #|@media (max-width: 760px){body{padding:64px 10px 12px;height:auto;}main{min-height:auto;}footer{position:static;margin-top:12px;padding:8px 0 0;border-top:none;}}
@@ -979,6 +1098,135 @@ fn extract_json_string(json : Json, key : String) -> String {
       }
     _ => ""
   }
+}
+
+///|
+fn render_diff_patch(patch : String) -> @luna.Node[Unit, String] {
+  if patch.length() == 0 {
+    return @luna.text("")
+  }
+  let lines : Array[@luna.Node[Unit, String]] = []
+  for line_view in patch.split("\n") {
+    let line = line_view.to_string()
+    let cls = if line.has_prefix("+") {
+      "diff-add"
+    } else if line.has_prefix("-") {
+      "diff-del"
+    } else {
+      ""
+    }
+    if cls.length() > 0 {
+      lines.push(
+        @luna.h("span", [("class", @luna.attr_static(cls))], [
+          @luna.text(line + "\n"),
+        ]),
+      )
+    } else {
+      lines.push(@luna.text(line + "\n"))
+    }
+  }
+  @luna.h("pre", [("class", @luna.attr_static("source-code"))], [
+    @luna.h("code", [], lines),
+  ])
+}
+
+///|
+fn render_tags_page(api : @core.ApiState) -> String {
+  let tags = api.list_tags()
+  let rows : Array[@luna.Node[Unit, String]] = []
+  for tag in tags {
+    let short_sha = if tag.sha.length() > 7 {
+      String::unsafe_substring(tag.sha, start=0, end=7)
+    } else {
+      tag.sha
+    }
+    rows.push(
+      @luna.h("tr", [], [
+        @luna.h("td", [], [@luna.h("strong", [], [@luna.text(tag.name)])]),
+        @luna.h("td", [], [
+          @components.link("/commit/" + tag.sha, [@luna.text(short_sha)]),
+        ]),
+        @luna.h("td", [], [@luna.text(tag.message)]),
+      ]),
+    )
+  }
+  if rows.length() == 0 {
+    rows.push(
+      @luna.h("tr", [], [
+        @luna.h("td", [("colspan", @luna.attr_static("3"))], [
+          @luna.text("No tags"),
+        ]),
+      ]),
+    )
+  }
+  let table = @luna.h("table", [("class", @luna.attr_static("wf-table"))], [
+    @luna.h("thead", [], [
+      @luna.h("tr", [], [
+        @luna.h("th", [], [@luna.text("Tag")]),
+        @luna.h("th", [], [@luna.text("SHA")]),
+        @luna.h("th", [], [@luna.text("Message")]),
+      ]),
+    ]),
+    @luna.h("tbody", [], rows),
+  ])
+  render_layout("Tags", [
+    @luna.h("h1", [], [@luna.text("Tags")]),
+    table,
+  ])
+}
+
+///|
+fn render_stats_page(api : @core.ApiState) -> String {
+  let stats = api.repo_stats()
+  let stat_items : Array[@luna.Node[Unit, String]] = [
+    @luna.h("li", [], [
+      @luna.text("Files: " + stats.file_count.to_string()),
+    ]),
+    @luna.h("li", [], [
+      @luna.text("Commits: " + stats.commit_count.to_string()),
+    ]),
+    @luna.h("li", [], [
+      @luna.text("Branches: " + stats.branch_count.to_string()),
+    ]),
+    @luna.h("li", [], [
+      @luna.text("Issues: " + stats.issue_count.to_string()),
+    ]),
+    @luna.h("li", [], [
+      @luna.text("Pull Requests: " + stats.pr_count.to_string()),
+    ]),
+  ]
+  let content : Array[@luna.Node[Unit, String]] = [
+    @luna.h("h1", [], [@luna.text("Repository Statistics")]),
+    @luna.h("ul", [], stat_items),
+  ]
+  if stats.contributors.length() > 0 {
+    content.push(
+      @luna.h("h2", [], [@luna.text("Contributors")]),
+    )
+    let contrib_rows : Array[@luna.Node[Unit, String]] = []
+    for entry in stats.contributors {
+      contrib_rows.push(
+        @luna.h("tr", [], [
+          @luna.h("td", [], [@luna.text(entry.0)]),
+          @luna.h("td", [], [
+            @luna.text(entry.1.to_string() + " commits"),
+          ]),
+        ]),
+      )
+    }
+    content.push(
+      @luna.h("table", [("class", @luna.attr_static("wf-table"))], [
+        @luna.h("thead", [], [
+          @luna.h("tr", [], [
+            @luna.h("th", [], [@luna.text("Author")]),
+            @luna.h("th", [], [@luna.text("Commits")]),
+          ]),
+        ]),
+        @luna.h("tbody", [], contrib_rows),
+      ]),
+    )
+  }
+  render_layout("Stats", content)
 }
 
 ///|
@@ -1260,6 +1508,39 @@ fn render_pull_detail_page(
           }
         }
         None => ()
+      }
+      // PR comments
+      let comments = api.list_pr_comments(id)
+      if comments.length() > 0 {
+        content.push(
+          @luna.h("h2", [], [
+            @luna.text(
+              "Comments (" + comments.length().to_string() + ")",
+            ),
+          ]),
+        )
+        for comment in comments {
+          content.push(
+            @luna.h(
+              "div",
+              [
+                (
+                  "style",
+                  @luna.attr_static(
+                    "border:1px solid var(--border);border-radius:6px;padding:12px;margin:8px 0;",
+                  ),
+                ),
+              ],
+              [
+                @luna.h("p", [], [
+                  @luna.h("strong", [], [@luna.text(comment.author)]),
+                  @luna.text(" · " + format_timestamp(comment.created_at)),
+                ]),
+                @luna.raw_html(@markdown.md_to_html(comment.body)),
+              ],
+            ),
+          )
+        }
       }
       { status: 200, html: render_layout("PR #" + id, content) }
     }
@@ -1717,13 +1998,7 @@ fn render_commit_detail_page(
             @luna.h("li", [], [
               @luna.h("strong", [], [@luna.text(df.path)]),
               @luna.text(" [" + df.kind + "]"),
-              if df.patch.length() > 0 {
-                @luna.h("pre", [("class", @luna.attr_static("source-code"))], [
-                  @luna.h("code", [], [@luna.text(df.patch)]),
-                ])
-              } else {
-                @luna.text("")
-              },
+              render_diff_patch(df.patch),
             ]),
           )
         }

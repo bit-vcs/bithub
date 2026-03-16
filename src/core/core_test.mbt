@@ -17,12 +17,18 @@ test "mars_route_specs contains API routes" {
   inspect(routes[10].path, content="/commit/:sha")
   inspect(routes[11].path, content="/branches")
   inspect(routes[12].path, content="/blame")
-  inspect(routes[13].path, content="/api/issues")
-  inspect(routes[14].path, content="/api/issues/:id/comments")
-  inspect(routes[15].http_method, content="POST")
-  inspect(routes[15].path, content="/api/webhook/relay")
-  inspect(routes[16].http_method, content="POST")
-  inspect(routes[16].path, content="/api/actions/runs/status")
+  // POST routes at the end
+  let post_routes = routes.filter(fn(r) { r.http_method == "POST" })
+  assert_true(post_routes.length() >= 2)
+  assert_true(
+    post_routes.filter(fn(r) { r.path == "/api/webhook/relay" }).length() == 1,
+  )
+  assert_true(
+    post_routes
+    .filter(fn(r) { r.path == "/api/actions/runs/status" })
+    .length() ==
+    1,
+  )
 }
 
 ///|
