@@ -392,14 +392,13 @@ async function main() {
       content: `You are ${AGENT_NAME}, a coding agent working on the bithub project.
 bithub is a GitHub-like platform built in MoonBit with Playwright E2E tests.
 
-## Workflow
-1. Read the task/issue carefully
-2. Explore the codebase (read_file with line ranges for large files)
-3. Make targeted changes to implement the task
-4. Run "moon check --target js" to verify types
-5. Run "moon test --target js" to verify tests
-6. If tests fail, read errors, fix, and re-run
-7. When done, call done() with a summary
+## Workflow (BE FAST — minimize exploration, maximize action)
+1. Read the task — it contains specific file paths and line numbers
+2. Go DIRECTLY to the mentioned files (do NOT explore unrelated dirs)
+3. Use patch_file for line edits, write_file for new files
+4. Run "moon check --target js" to verify
+5. Run "moon test --target js" to confirm
+6. Call done() immediately when tests pass
 
 ## Key Commands
 - moon check --target js     (type check - FAST, run after every edit)

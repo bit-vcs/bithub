@@ -118,7 +118,7 @@ test "ApiState workflow_detail returns job and step info" {
 ///|
 test "ApiState workflow_detail returns None for missing file" {
   let api = ApiState::new()
-  assert_true(api.workflow_detail("nonexistent.yml").is_empty())
+  assert_true(api.workflow_detail("nonexistent.yml").is_none())
 }
 
 ///|
@@ -221,9 +221,9 @@ test "get_ci_run retrieves a specific run" {
   let json = make_relay_webhook("evt-020", "refs/relay/incoming/main")
   let _ = api.process_relay_webhook(json)
   let run = api.get_ci_run("evt-020")
-  assert_true(run.is_empty() |> not)
+  assert_true(run.is_none() |> not)
   inspect(run.unwrap().workflow_name, content="CI")
-  assert_true(api.get_ci_run("nonexistent").is_empty())
+  assert_true(api.get_ci_run("nonexistent").is_none())
 }
 
 ///|
