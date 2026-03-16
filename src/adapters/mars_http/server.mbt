@@ -520,6 +520,75 @@ fn is_markdown_path(path : String) -> Bool {
 }
 
 ///|
+fn format_timestamp(raw : String) -> String {
+  if raw.length() == 0 {
+    return ""
+  }
+  let mut epoch = 0L
+  for c in raw {
+    if c >= '0' && c <= '9' {
+      epoch = epoch * 10L + (c.to_int() - '0'.to_int()).to_int64()
+    } else {
+      return raw
+    }
+  }
+  if epoch == 0L {
+    return raw
+  }
+  // Convert epoch seconds to YYYY-MM-DD HH:MM UTC
+  let secs_per_min = 60L
+  let secs_per_hour = 3600L
+  let secs_per_day = 86400L
+  let remaining = epoch
+  let time_of_day = remaining % secs_per_day
+  let mut days = remaining / secs_per_day
+  let hour = time_of_day / secs_per_hour
+  let minute = (time_of_day % secs_per_hour) / secs_per_min
+  // Calculate year/month/day from days since 1970-01-01
+  let mut year = 1970L
+  while true {
+    let is_leap = (year % 4L == 0L && year % 100L != 0L) || year % 400L == 0L
+    let year_days = if is_leap { 366L } else { 365L }
+    if days < year_days {
+      break
+    }
+    days -= year_days
+    year += 1L
+  }
+  let is_leap = (year % 4L == 0L && year % 100L != 0L) || year % 400L == 0L
+  let month_days = [
+    31L, if is_leap { 29L } else { 28L }, 31L, 30L, 31L, 30L, 31L, 31L, 30L,
+    31L, 30L, 31L,
+  ]
+  let mut month = 1L
+  for md in month_days {
+    if days < md {
+      break
+    }
+    days -= md
+    month += 1L
+  }
+  let day = days + 1L
+  let pad2 = fn(n : Int64) -> String {
+    if n < 10L {
+      "0" + n.to_string()
+    } else {
+      n.to_string()
+    }
+  }
+  year.to_string() +
+  "-" +
+  pad2(month) +
+  "-" +
+  pad2(day) +
+  " " +
+  pad2(hour) +
+  ":" +
+  pad2(minute) +
+  " UTC"
+}
+
+///|
 fn query_param(raw_path : String, key : String) -> String? {
   match query_string(raw_path) {
     None => None
@@ -728,7 +797,7 @@ fn render_issue_detail_page(
             " | author: " +
             detail.issue.author +
             " | created: " +
-            detail.issue.created_at,
+            format_timestamp(detail.issue.created_at),
           ),
         ]),
       ]
@@ -763,7 +832,7 @@ fn render_issue_detail_page(
               [
                 @luna.h("p", [], [
                   @luna.h("strong", [], [@luna.text(comment.author)]),
-                  @luna.text(" · " + comment.created_at),
+                  @luna.text(" · " + format_timestamp(comment.created_at)),
                 ]),
                 @luna.raw_html(@markdown.md_to_html(comment.body)),
               ],
@@ -801,7 +870,7 @@ fn render_activity_page(api : @core.ApiState) -> String {
           @components.link(href, [@luna.text(event.title)]),
         ]),
         @luna.h("td", [], [@luna.text(event.detail)]),
-        @luna.h("td", [], [@luna.text(event.timestamp)]),
+        @luna.h("td", [], [@luna.text(format_timestamp(event.timestamp))]),
       ]),
     )
   }
@@ -959,7 +1028,7 @@ fn render_commits_page(api : @core.ApiState) -> String {
         ]),
         @luna.h("td", [], [@luna.text(first_line)]),
         @luna.h("td", [], [@luna.text(commit.author)]),
-        @luna.h("td", [], [@luna.text(commit.timestamp)]),
+        @luna.h("td", [], [@luna.text(format_timestamp(commit.timestamp))]),
       ]),
     )
   }
@@ -1017,7 +1086,7 @@ fn render_commit_detail_page(
             "author: " +
             detail.commit.author +
             " | date: " +
-            detail.commit.timestamp,
+            format_timestamp(detail.commit.timestamp),
           ),
         ]),
       ]
@@ -1134,7 +1203,7 @@ fn render_ci_page(api : @core.ApiState) -> String {
         @luna.h("td", [], [@luna.text(run.workflow_name)]),
         @luna.h("td", [], [@luna.text(run.ref_name)]),
         @luna.h("td", [], [@luna.text(run.status)]),
-        @luna.h("td", [], [@luna.text(run.triggered_at)]),
+        @luna.h("td", [], [@luna.text(format_timestamp(run.triggered_at))]),
       ]),
     )
   }
@@ -1193,7 +1262,7 @@ fn render_ci_run_detail_page(
             " | status: " +
             status_label +
             " | triggered: " +
-            detail.run.triggered_at,
+            format_timestamp(detail.run.triggered_at),
           ),
         ]),
       ]
