@@ -1529,7 +1529,7 @@ pub fn ApiState::activity_rss(
 }
 
 ///|
-fn xml_escape(s : String) -> String {
+pub fn xml_escape(s : String) -> String {
   let sb = StringBuilder::new()
   for c in s {
     match c {
