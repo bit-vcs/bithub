@@ -1,25 +1,24 @@
 # TODO
 
-最終更新: 2026-02-19
+Last updated: 2026-02-19
 
-## 運用ルール
+## Rules
 
-- 新しい依頼はまず `Inbox` に追加する
-- 着手したら `Doing` に移動する
-- 完了したら `Done` に移動し、日付を残す
+- Add new requests to `Inbox` first
+- Move to `Doing` when started
+- Move to `Done` when finished, noting the date
 
 ## Inbox
 
-- [ ] relay ノード一覧 (`/relay`) の E2E テストを追加する
-- [ ] relay ノード一覧の更新方法を改善する（手動リロード以外）
-- [ ] relay publish/poll の失敗時 UI 表示を改善する
+- [ ] Add E2E tests for relay node list (`/relay`)
+- [ ] Improve relay node list refresh (beyond manual reload)
+- [ ] Improve UI feedback on relay publish/poll failures
 
 ## Doing
 
-- [ ] （空）
+- [ ] (empty)
 
 ## Done
 
-- [x] 2026-02-19: `TODO.md` を作成して運用開始
-- [x] 2026-02-19: relay protocol 前提で `/relay` ノード閲覧機能を追加
-
+- [x] 2026-02-19: Created `TODO.md` and started tracking
+- [x] 2026-02-19: Added `/relay` node browser based on relay protocol

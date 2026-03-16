@@ -2,28 +2,28 @@
 
 ## Goal
 
-`bithub` はルーティングを `mars` で維持しつつ、SSR は `sol` + `luna` へ寄せる。
+`bithub` keeps routing in `mars` while moving SSR to `sol` + `luna`.
 
 ## Design Rule
 
 - `core`:
-  - 画面/機能の契約と純粋ロジック（データ返却のみ）
-  - `mars` / `sol` / `luna` 依存を入れない
+  - Contracts and pure logic for screens/features (data only)
+  - No `mars` / `sol` / `luna` dependencies
 - `adapters/mars_http`:
-  - `core` を `mars.Server` へ接続する層
-  - HTML は `sol.render_page` + `luna/x/components` で SSR する
+  - Connects `core` to `mars.Server`
+  - HTML rendered via `sol.render_page` + `luna/x/components` SSR
 - `cmd/main`:
-  - Cloudflare 向け `fetch` エントリ公開のみ
-  - `@mars.Server::to_handler_with_env` に委譲する
+  - Only exports the Cloudflare `fetch` entrypoint
+  - Delegates to `@mars.Server::to_handler_with_env`
 
 ## Migration Intention
 
-`core` は再利用可能なデータ契約を保ち、描画戦略は adapter 側で差し替える。
-現状は `mars_http` adapter 内で Sol SSR を実施済み。
+`core` maintains reusable data contracts; rendering strategy is swappable at the adapter layer.
+Currently, Sol SSR is performed inside the `mars_http` adapter.
 
 ## Current Minimal Contract
 
 - `core.mars_route_specs()`
 - `core.home_text()`
 - `core.healthz_text()`
-- `core.ApiState` のデータ契約（`list_entries` / `readme_markdown` / `lookup_file`）
+- `core.ApiState` data contract (`list_entries` / `readme_markdown` / `lookup_file`)
