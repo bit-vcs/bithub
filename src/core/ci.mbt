@@ -440,29 +440,6 @@ fn serialize_ci_step_run(step : CiStepRun) -> String {
   ].join("\n")
 }
 
-///|
-fn parse_kv_fields(text : String) -> Map[String, String] {
-  let fields : Map[String, String] = {}
-  for line_view in text.split("\n") {
-    let line = line_view.to_string()
-    if line.length() == 0 {
-      continue
-    }
-    match line.find("=") {
-      Some(i) => {
-        let key = String::unsafe_substring(line, start=0, end=i)
-        let value = String::unsafe_substring(
-          line,
-          start=i + 1,
-          end=line.length(),
-        )
-        fields.set(key, value)
-      }
-      None => ()
-    }
-  }
-  fields
-}
 
 ///|
 fn deserialize_ci_run(text : String) -> CiRun? {

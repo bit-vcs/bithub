@@ -372,10 +372,18 @@ async function main() {
   // Determine task
   let taskDescription: string;
   if (ISSUE_ID) {
-    // Fetch issue from bithub
+    // Fetch issue from bithub - extract meaningful content
     const html = await (await fetch(`${BITHUB_URL}/issues/${ISSUE_ID}`)).text();
-    const text = html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
-    taskDescription = `Implement bithub issue #${ISSUE_ID}:\n${text.slice(0, 600)}`;
+    // Extract title from <h1>
+    const titleMatch = html.match(/<h1[^>]*>(.*?)<\/h1>/s);
+    const title = titleMatch ? titleMatch[1].replace(/<[^>]*>/g, "").trim() : "";
+    // Extract body from region aria-label="issue body"
+    const bodyMatch = html.match(/aria-label="issue body"[^>]*>([\s\S]*?)(?=<h2|<footer)/);
+    const body = bodyMatch ? bodyMatch[1].replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim() : "";
+    // Extract metadata
+    const metaMatch = html.match(/state:.*?(?=<)/);
+    const meta = metaMatch ? metaMatch[0].trim() : "";
+    taskDescription = `Issue #${ISSUE_ID}: ${title}\n${meta}\n\n${body}`.slice(0, 1200);
     console.log(`Task: Issue #${ISSUE_ID}`);
   } else if (TASK) {
     taskDescription = TASK;

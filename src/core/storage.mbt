@@ -118,3 +118,27 @@ pub impl Storage for MapStorage with list(self, prefix) {
 pub impl Storage for MapStorage with has(self, key) {
   self.data.contains(key)
 }
+
+///|
+fn parse_kv_fields(text : String) -> Map[String, String] {
+  let fields : Map[String, String] = {}
+  for line_view in text.split("\n") {
+    let line = line_view.to_string()
+    if line.length() == 0 {
+      continue
+    }
+    match line.find("=") {
+      Some(i) => {
+        let key = String::unsafe_substring(line, start=0, end=i)
+        let value = String::unsafe_substring(
+          line,
+          start=i + 1,
+          end=line.length(),
+        )
+        fields.set(key, value)
+      }
+      None => ()
+    }
+  }
+  fields
+}
