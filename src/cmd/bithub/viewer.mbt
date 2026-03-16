@@ -427,7 +427,7 @@ fn split_resizer_script() -> String {
     #|  const apply = (next) => {
     #|    if (!desktop.matches) return;
     #|    current = clamp(next, minSize, computeMax());
-    #|    layout.style.setProperty('--sidebar-size', `${current}px`);
+    #|    layout.style.setProperty('--sidebar-size', current + 'px');
     #|    resizer.setAttribute('aria-valuemin', String(minSize));
     #|    resizer.setAttribute('aria-valuemax', String(computeMax()));
     #|    resizer.setAttribute('aria-valuenow', String(Math.round(current)));
