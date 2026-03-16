@@ -2,6 +2,87 @@
 pub fn create_app() -> @mars.Server {
   let app = @mars.Server::new()
   let api = @core.ApiState::new()
+  app.post(
+    "/api/webhook/relay",
+    @mars.handler(fn(ctx) {
+      let json_opt = ctx.body_json()
+      match json_opt {
+        Some(json) => {
+          let runs = api.process_relay_webhook(json)
+          let resp : Map[String, Json] = {}
+          resp.set("triggered", runs.length().to_json())
+          ctx.json(resp.to_json())
+        }
+        None => {
+          let err : Map[String, Json] = {}
+          err.set("error", "invalid json".to_json())
+          ctx.json(err.to_json(), status=400)
+        }
+      }
+    }),
+  )
+  app.post(
+    "/api/actions/runs/status",
+    @mars.handler(fn(ctx) {
+      let json_opt = ctx.body_json()
+      match json_opt {
+        Some(json) => {
+          guard json is Object(obj) else {
+            let e : Map[String, Json] = {}
+            e.set("error", "invalid payload".to_json())
+            return ctx.json(e.to_json(), status=400)
+          }
+          let run_id = match obj.get("run_id") {
+            Some(String(s)) => s
+            _ => {
+              let e : Map[String, Json] = {}
+              e.set("error", "missing run_id".to_json())
+              return ctx.json(e.to_json(), status=400)
+            }
+          }
+          let job_id = match obj.get("job_id") {
+            Some(String(s)) => s
+            _ => {
+              let e : Map[String, Json] = {}
+              e.set("error", "missing job_id".to_json())
+              return ctx.json(e.to_json(), status=400)
+            }
+          }
+          let step_index = match obj.get("step_index") {
+            Some(Number(n, ..)) => n.to_int()
+            _ => {
+              let e : Map[String, Json] = {}
+              e.set("error", "missing step_index".to_json())
+              return ctx.json(e.to_json(), status=400)
+            }
+          }
+          let status = match obj.get("status") {
+            Some(String(s)) => s
+            _ => {
+              let e : Map[String, Json] = {}
+              e.set("error", "missing status".to_json())
+              return ctx.json(e.to_json(), status=400)
+            }
+          }
+          let timestamp = match obj.get("timestamp") {
+            Some(String(s)) => s
+            _ => ""
+          }
+          let ok = api.update_step_status(
+            run_id, job_id, step_index, status, timestamp,
+          )
+          let resp : Map[String, Json] = {}
+          resp.set("ok", ok.to_json())
+          ctx.json(resp.to_json())
+        }
+        None => {
+          let e : Map[String, Json] = {}
+          e.set("error", "invalid json".to_json())
+          ctx.json(e.to_json(), status=400)
+        }
+      }
+    }),
+  )
   app.get(
     "*",
     @mars.handler(fn(ctx) {
@@ -25,6 +106,30 @@ pub fn create_app() -> @mars.Server {
         let page = render_file_page(api, path)
         return ctx.html(page.html, status=page.status)
       }
+      if route == "/actions/workflows" {
+        return ctx.html(render_workflows_page(api), status=200)
+      }
+      if route.has_prefix("/actions/workflows/") {
+        let file = String::unsafe_substring(
+          route,
+          start="/actions/workflows/".length(),
+          end=route.length(),
+        )
+        let page = render_workflow_detail_page(api, file)
+        return ctx.html(page.html, status=page.status)
+      }
+      if route.has_prefix("/actions/runs/") {
+        let id = String::unsafe_substring(
+          route,
+          start="/actions/runs/".length(),
+          end=route.length(),
+        )
+        let page = render_ci_run_detail_page(api, id)
+        return ctx.html(page.html, status=page.status)
+      }
+      if route == "/actions" {
+        return ctx.html(render_ci_page(api), status=200)
+      }
       ctx.text("Not Found", status=404)
     }),
   )
@@ -45,6 +150,9 @@ fn render_home_page() -> String {
     @luna.h("ul", [], [
       @luna.h("li", [], [@components.link("/readme", [@luna.text("README.md")])]),
       @luna.h("li", [], [@components.link("/filer", [@luna.text("files")])]),
+      @luna.h("li", [], [
+        @components.link("/actions/workflows", [@luna.text("workflows")]),
+      ]),
     ]),
   ])
 }
@@ -134,6 +242,122 @@ fn render_file_page(api : @core.ApiState, raw_path : String) -> PageHtml {
 }
 
 ///|
+fn render_workflows_page(api : @core.ApiState) -> String {
+  let workflows = api.list_workflows()
+  let rows : Array[@luna.Node[Unit, String]] = []
+  for wf in workflows {
+    let trigger_text = wf.triggers.join(", ")
+    rows.push(
+      @luna.h("tr", [], [
+        @luna.h("td", [], [
+          @components.link(
+            "/actions/workflows/" + wf.filename,
+            [@luna.text(wf.name)],
+          ),
+        ]),
+        @luna.h("td", [], [@luna.text(wf.filename)]),
+        @luna.h("td", [], [@luna.text(trigger_text)]),
+        @luna.h("td", [], [@luna.text(wf.job_count.to_string())]),
+      ]),
+    )
+  }
+  if rows.length() == 0 {
+    rows.push(
+      @luna.h("tr", [], [
+        @luna.h("td", [("colspan", @luna.attr_static("4"))], [
+          @luna.text("No workflows found"),
+        ]),
+      ]),
+    )
+  }
+  let table = @luna.h("table", [("class", @luna.attr_static("wf-table"))], [
+    @luna.h("thead", [], [
+      @luna.h("tr", [], [
+        @luna.h("th", [], [@luna.text("Name")]),
+        @luna.h("th", [], [@luna.text("File")]),
+        @luna.h("th", [], [@luna.text("Triggers")]),
+        @luna.h("th", [], [@luna.text("Jobs")]),
+      ]),
+    ]),
+    @luna.h("tbody", [], rows),
+  ])
+  render_layout("workflows", [
+    @luna.h("h1", [], [@luna.text("Workflows")]),
+    table,
+  ])
+}
+
+///|
+fn render_workflow_detail_page(
+  api : @core.ApiState,
+  filename : String,
+) -> PageHtml {
+  if filename.length() == 0 {
+    return {
+      status: 400,
+      html: render_layout("workflow", [
+        @luna.h("h1", [], [@luna.text("workflow")]),
+        @luna.h("p", [], [@luna.text("usage: /actions/workflows/:file")]),
+      ]),
+    }
+  }
+  match api.workflow_detail(filename) {
+    Some(detail) => {
+      let content : Array[@luna.Node[Unit, String]] = [
+        @luna.h("h1", [], [@luna.text(detail.name)]),
+        @luna.h("p", [], [
+          @luna.text("file: " + detail.filename + " | triggers: " + detail.triggers.join(
+            ", ",
+          )),
+        ]),
+      ]
+      for job in detail.jobs {
+        let step_nodes : Array[@luna.Node[Unit, String]] = []
+        for step in job.steps {
+          let desc = match step.uses {
+            Some(uses) => "uses: " + uses
+            None =>
+              match step.run_preview {
+                Some(r) => "run: " + r
+                None => "(no action)"
+              }
+          }
+          let label = if step.name.length() > 0 { step.name } else { step.id }
+          step_nodes.push(
+            @luna.h("li", [], [
+              @luna.h("strong", [], [@luna.text(label)]),
+              @luna.text(" — " + desc),
+            ]),
+          )
+        }
+        let runs_on_text = job.runs_on.join(", ")
+        content.push(
+          @luna.h("h2", [], [
+            @luna.text("Job: " + job.name),
+          ]),
+        )
+        content.push(
+          @luna.h("p", [], [
+            @luna.text(
+              "runs-on: " + runs_on_text + " | steps: " + job.step_count.to_string(),
+            ),
+          ]),
+        )
+        content.push(@luna.h("ol", [], step_nodes))
+      }
+      { status: 200, html: render_layout(detail.name, content) }
+    }
+    None => {
+      status: 404,
+      html: render_layout(filename, [
+        @luna.h("h1", [], [@luna.text(filename)]),
+        @luna.h("p", [], [@luna.text("workflow not found")]),
+      ]),
+    }
+  }
+}
+
+///|
 fn render_layout(
   title : String,
   content : Array[@luna.Node[Unit, String]],
@@ -156,6 +380,10 @@ fn render_layout(
             @components.link("/readme", [@luna.text("README")]),
             @luna.text(" | "),
             @components.link("/filer", [@luna.text("filer")]),
+            @luna.text(" | "),
+            @components.link("/actions/workflows", [@luna.text("workflows")]),
+            @luna.text(" | "),
+            @components.link("/actions", [@luna.text("actions")]),
           ],
         ),
       ]),
@@ -178,6 +406,7 @@ fn render_layout(
     #|a{color:var(--link);}
     #|pre.source-code{overflow:auto;background:var(--pre);padding:12px;border-radius:6px;}
     #|code{font-family:ui-monospace,Menlo,monospace;}
+    #|.wf-table{width:100%;border-collapse:collapse;}.wf-table th,.wf-table td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--border);}.wf-table th{font-weight:600;}
     #|@media (max-width: 760px){body{padding:64px 10px 12px;height:auto;}main{min-height:auto;}footer{position:static;margin-top:12px;padding:8px 0 0;border-top:none;}}
   let head = "<meta charset=\"utf-8\"><style>" + css + "</style>"
   @sol.render_page(page, title~, head~)
@@ -281,6 +510,124 @@ fn find_char(s : String, target : Char) -> Int {
     idx += 1
   }
   -1
+}
+
+///|
+fn render_ci_page(api : @core.ApiState) -> String {
+  let runs = api.list_ci_runs()
+  let rows : Array[@luna.Node[Unit, String]] = []
+  for run in runs {
+    rows.push(
+      @luna.h("tr", [], [
+        @luna.h("td", [], [
+          @components.link(
+            "/actions/runs/" + run.id,
+            [@luna.text(run.id)],
+          ),
+        ]),
+        @luna.h("td", [], [@luna.text(run.workflow_name)]),
+        @luna.h("td", [], [@luna.text(run.ref_name)]),
+        @luna.h("td", [], [@luna.text(run.status)]),
+        @luna.h("td", [], [@luna.text(run.triggered_at)]),
+      ]),
+    )
+  }
+  if rows.length() == 0 {
+    rows.push(
+      @luna.h("tr", [], [
+        @luna.h("td", [("colspan", @luna.attr_static("5"))], [
+          @luna.text("No CI runs"),
+        ]),
+      ]),
+    )
+  }
+  let table = @luna.h("table", [("class", @luna.attr_static("wf-table"))], [
+    @luna.h("thead", [], [
+      @luna.h("tr", [], [
+        @luna.h("th", [], [@luna.text("ID")]),
+        @luna.h("th", [], [@luna.text("Workflow")]),
+        @luna.h("th", [], [@luna.text("Ref")]),
+        @luna.h("th", [], [@luna.text("Status")]),
+        @luna.h("th", [], [@luna.text("Triggered")]),
+      ]),
+    ]),
+    @luna.h("tbody", [], rows),
+  ])
+  render_layout("CI Runs", [
+    @luna.h("h1", [], [@luna.text("CI Runs")]),
+    table,
+  ])
+}
+
+///|
+fn render_ci_run_detail_page(
+  api : @core.ApiState,
+  run_id : String,
+) -> PageHtml {
+  if run_id.length() == 0 {
+    return {
+      status: 400,
+      html: render_layout("CI Run", [
+        @luna.h("h1", [], [@luna.text("CI Run")]),
+        @luna.h("p", [], [@luna.text("usage: /actions/runs/:id")]),
+      ]),
+    }
+  }
+  match api.get_ci_run_detail(run_id) {
+    Some(detail) => {
+      let status_label = detail.run.status
+      let content : Array[@luna.Node[Unit, String]] = [
+        @luna.h("h1", [], [
+          @luna.text("CI Run: " + detail.run.workflow_name),
+        ]),
+        @luna.h("p", [], [
+          @luna.text(
+            "ref: " +
+            detail.run.ref_name +
+            " | status: " +
+            status_label +
+            " | triggered: " +
+            detail.run.triggered_at,
+          ),
+        ]),
+      ]
+      for job_detail in detail.jobs {
+        let job = job_detail.job
+        let step_nodes : Array[@luna.Node[Unit, String]] = []
+        for step in job_detail.steps {
+          let action = if step.uses.length() > 0 {
+            "uses: " + step.uses
+          } else if step.run_cmd.length() > 0 {
+            "run: " + step.run_cmd
+          } else {
+            "(no action)"
+          }
+          step_nodes.push(
+            @luna.h("li", [], [
+              @luna.h("strong", [], [@luna.text(step.name)]),
+              @luna.text(
+                " [" + step.status + "] — " + action,
+              ),
+            ]),
+          )
+        }
+        content.push(
+          @luna.h("h2", [], [
+            @luna.text("Job: " + job.name + " [" + job.status + "]"),
+          ]),
+        )
+        content.push(@luna.h("ol", [], step_nodes))
+      }
+      { status: 200, html: render_layout("CI Run: " + run_id, content) }
+    }
+    None => {
+      status: 404,
+      html: render_layout("CI Run", [
+        @luna.h("h1", [], [@luna.text("CI Run: " + run_id)]),
+        @luna.h("p", [], [@luna.text("run not found")]),
+      ]),
+    }
+  }
 }
 
 ///|

@@ -257,12 +257,200 @@ fn seed_files(kv : @kv.Kv) -> Unit {
     #|  handler(request)
     #|}
   kv.set_string("src/cmd/main/main.mbt", main_entry)
+  let ci_workflow =
+    #|name: CI
+    #|on:
+    #|  push:
+    #|    branches:
+    #|      - main
+    #|jobs:
+    #|  build:
+    #|    runs-on: ubuntu-latest
+    #|    steps:
+    #|      - uses: actions/checkout@v4
+    #|      - name: Install dependencies
+    #|        run: npm install
+    #|      - name: Run tests
+    #|        run: npm test
+    #|      - name: Build
+    #|        run: npm run build
+    #|  lint:
+    #|    runs-on: ubuntu-latest
+    #|    steps:
+    #|      - uses: actions/checkout@v4
+    #|      - name: Lint
+    #|        run: npm run lint
+  kv.set_string(".github/workflows/ci.yml", ci_workflow)
+  let deploy_workflow =
+    #|name: Deploy
+    #|on:
+    #|  push:
+    #|    branches:
+    #|      - main
+    #|    paths:
+    #|      - src/**
+    #|jobs:
+    #|  deploy:
+    #|    runs-on: ubuntu-latest
+    #|    steps:
+    #|      - uses: actions/checkout@v4
+    #|      - name: Deploy to production
+    #|        run: ./deploy.sh
+  kv.set_string(".github/workflows/deploy.yml", deploy_workflow)
   let notes =
     #|Mars/Sol boundary note:
     #|- keep core pure
     #|- keep adapter replaceable
     #|- cloudflare js target first
   kv.set_string("docs/notes.txt", notes)
+}
+
+///|
+pub struct WorkflowEntry {
+  filename : String
+  name : String
+  job_count : Int
+  triggers : Array[String]
+}
+
+///|
+pub struct WorkflowDetail {
+  filename : String
+  name : String
+  triggers : Array[String]
+  jobs : Array[WorkflowJobSummary]
+}
+
+///|
+pub struct WorkflowJobSummary {
+  id : String
+  name : String
+  runs_on : Array[String]
+  step_count : Int
+  steps : Array[WorkflowStepSummary]
+}
+
+///|
+pub struct WorkflowStepSummary {
+  id : String
+  name : String
+  uses : String?
+  run_preview : String?
+}
+
+///|
+pub fn ApiState::list_workflows(self : ApiState) -> Array[WorkflowEntry] {
+  let entries : Array[WorkflowEntry] = []
+  let workflow_dir = ".github/workflows"
+  let names = self.kv.list(workflow_dir)
+  names.sort_by(fn(a, b) { String::compare(a, b) })
+  for name in names {
+    let path = workflow_dir + "/" + name
+    if not(name.has_suffix(".yml") || name.has_suffix(".yaml")) {
+      continue
+    }
+    match self.kv.get(path) {
+      Some(bytes) => {
+        let text = @utf8.decode_lossy(bytes)
+        let result = @actrun.parse_workflow_yaml(text)
+        match result.workflow {
+          Some(wf) => {
+            let triggers = collect_triggers(wf)
+            entries.push({
+              filename: name,
+              name: if wf.name.length() > 0 { wf.name } else { name },
+              job_count: wf.jobs.length(),
+              triggers,
+            })
+          }
+          None => {
+            entries.push({
+              filename: name,
+              name: name,
+              job_count: 0,
+              triggers: ["(parse error)"],
+            })
+          }
+        }
+      }
+      None => ()
+    }
+  }
+  entries
+}
+
+///|
+pub fn ApiState::workflow_detail(
+  self : ApiState,
+  filename : String,
+) -> WorkflowDetail? {
+  let path = ".github/workflows/" + filename
+  match self.kv.get(path) {
+    Some(bytes) => {
+      let text = @utf8.decode_lossy(bytes)
+      let result = @actrun.parse_workflow_yaml(text)
+      match result.workflow {
+        Some(wf) => {
+          let jobs : Array[WorkflowJobSummary] = []
+          for job in wf.jobs {
+            let steps : Array[WorkflowStepSummary] = []
+            for step in job.steps {
+              let run_preview = match step.run {
+                Some(r) =>
+                  if r.length() > 60 {
+                    Some(
+                      String::unsafe_substring(r, start=0, end=60) + "...",
+                    )
+                  } else {
+                    Some(r)
+                  }
+                None => None
+              }
+              steps.push({
+                id: step.id,
+                name: step.name,
+                uses: step.uses,
+                run_preview,
+              })
+            }
+            jobs.push({
+              id: job.id,
+              name: if job.name.length() > 0 { job.name } else { job.id },
+              runs_on: job.runs_on,
+              step_count: job.steps.length(),
+              steps,
+            })
+          }
+          Some({
+            filename,
+            name: if wf.name.length() > 0 { wf.name } else { filename },
+            triggers: collect_triggers(wf),
+            jobs,
+          })
+        }
+        None => None
+      }
+    }
+    None => None
+  }
+}
+
+///|
+fn collect_triggers(wf : @actrun.WorkflowSpec) -> Array[String] {
+  let triggers : Array[String] = []
+  if wf.trigger.branches.length() > 0 ||
+    wf.trigger.branches_ignore.length() > 0 ||
+    wf.trigger.paths.length() > 0 ||
+    wf.trigger.paths_ignore.length() > 0 {
+    triggers.push("push")
+  }
+  if wf.workflow_call {
+    triggers.push("workflow_call")
+  }
+  if triggers.length() == 0 {
+    triggers.push("push")
+  }
+  triggers
 }
 
 ///|

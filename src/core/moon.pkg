@@ -1,4 +1,5 @@
 import {
+  "bit-vcs/bithub/actrun" @actrun,
   "mizchi/bit" @bit,
   "mizchi/bit/lib" @bitlib,
   "mizchi/bit/x/fs" @bitfs,
