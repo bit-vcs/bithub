@@ -2,14 +2,14 @@
   "name": "bit-vcs/bithub",
   "version": "0.1.1",
   "deps": {
-    "moonbitlang/async": "0.16.6",
-    "mizchi/mars": "0.3.7",
-    "mizchi/bit": "0.21.2",
+    "moonbitlang/async": "0.16.8",
+    "mizchi/mars": "0.3.9",
+    "mizchi/bit": "0.32.0",
     "mizchi/markdown": "0.4.7",
-    "mizchi/luna": "0.12.3",
-    "moonbitlang/x": "0.4.40",
+    "mizchi/luna": "0.16.0",
+    "moonbitlang/x": "0.4.41",
     "mizchi/js": "0.10.14",
-    "mizchi/sol": "0.6.0"
+    "mizchi/sol": "0.12.0"
   },
   "readme": "README.md",
   "repository": "https://github.com/bit-vcs/bithub",
