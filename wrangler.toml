@@ -5,6 +5,10 @@ compatibility_date = "2026-01-01"
 [observability]
 enabled = true
 
+[[r2_buckets]]
+binding = "BITHUB_STORE"
+bucket_name = "bithub-store"
+
 # Cloudflare Containers for CI job execution
 # [[containers.apps]]
 # name = "ci-runner"

@@ -303,9 +303,13 @@ test "MapStorage: list returns child keys at one level" {
 }
 
 ///|
+extern "js" fn rm_rf(path : String) -> Unit =
+  #| (path) => { try { require("node:fs").rmSync(path, { recursive: true }); } catch {} }
+
+///|
 test "FsStorage: get/set/has/list round-trip" {
-  let rng = @random.Rand::new()
-  let dir = "/tmp/bithub-fs-test-" + rng.uint().to_string()
+  let dir = "/tmp/bithub-fs-test-unit"
+  rm_rf(dir)
   let s : &Storage = FsStorage::new(dir)
   assert_true(s.get("foo") is None)
   assert_true(not(s.has("foo")))

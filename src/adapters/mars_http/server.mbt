@@ -1,4 +1,13 @@
 ///|
+extern "js" fn now_epoch_string() -> String =
+  #| () => String(Math.floor(Date.now() / 1000))
+
+///|
+fn timestamp_or_now(raw : String) -> String {
+  if raw.length() > 0 { raw } else { now_epoch_string() }
+}
+
+///|
 fn get_spawn_config(ctx : @mars.Context) -> @core.CiSpawnConfig? {
   let url = ctx.env_var("CI_ORCHESTRATOR_URL").unwrap_or("")
   if url.length() == 0 {
@@ -48,8 +57,12 @@ fn require_write(
 
 ///|
 pub fn create_app() -> @mars.Server {
+  create_app_with_storage(@core.ApiState::new())
+}
+
+///|
+pub fn create_app_with_storage(api : @core.ApiState) -> @mars.Server {
   let app = @mars.Server::new()
-  let api = @core.ApiState::new()
   app.post(
     "/api/webhook/relay",
     @mars.handler(fn(ctx) {
@@ -126,10 +139,12 @@ pub fn create_app() -> @mars.Server {
               return ctx.json(e.to_json(), status=400)
             }
           }
-          let timestamp = match obj.get("timestamp") {
-            Some(String(s)) => s
-            _ => ""
-          }
+          let timestamp = timestamp_or_now(
+            match obj.get("timestamp") {
+              Some(String(s)) => s
+              _ => ""
+            },
+          )
           let ok = api.update_step_status(
             run_id, job_id, step_index, status, timestamp,
           )
@@ -172,10 +187,12 @@ pub fn create_app() -> @mars.Server {
             Some(String(s)) => s
             _ => token_info.identity
           }
-          let timestamp = match obj.get("timestamp") {
-            Some(String(s)) => s
-            _ => ""
-          }
+          let timestamp = timestamp_or_now(
+            match obj.get("timestamp") {
+              Some(String(s)) => s
+              _ => ""
+            },
+          )
           let id = api.create_issue(title, body, author, timestamp)
           let resp : Map[String, Json] = {}
           resp.set("id", id.to_json())
@@ -218,10 +235,12 @@ pub fn create_app() -> @mars.Server {
             Some(String(s)) => s
             _ => token_info.identity
           }
-          let timestamp = match obj.get("timestamp") {
-            Some(String(s)) => s
-            _ => ""
-          }
+          let timestamp = timestamp_or_now(
+            match obj.get("timestamp") {
+              Some(String(s)) => s
+              _ => ""
+            },
+          )
           let ok = api.add_comment(issue_id, author, body, timestamp)
           let resp : Map[String, Json] = {}
           resp.set("ok", ok.to_json())

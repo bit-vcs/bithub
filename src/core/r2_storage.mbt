@@ -35,11 +35,9 @@ extern "js" fn r2_put(bucket_name : String, key : String, value : String) -> Uni
   #|   return (bucket_name, key, value) => {
   #|     if (!globalThis.__r2_cache) globalThis.__r2_cache = {};
   #|     globalThis.__r2_cache[bucket_name + '/' + key] = value;
-  #|     // Queue async write to actual R2
-  #|     if (typeof globalThis.__r2_env !== 'undefined') {
-  #|       const bucket = globalThis.__r2_env[bucket_name];
-  #|       if (bucket) bucket.put(key, value).catch(() => {});
-  #|     }
+  #|     // Mark as dirty for flush
+  #|     if (!globalThis.__r2_dirty) globalThis.__r2_dirty = {};
+  #|     globalThis.__r2_dirty[key] = true;
   #|   };
   #| })()
 
