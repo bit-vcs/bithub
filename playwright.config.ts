@@ -44,6 +44,14 @@ export default defineConfig({
       },
     },
     {
+      name: 'features',
+      testMatch: /features\.spec\.ts/,
+      use: {
+        baseURL: `http://127.0.0.1:${MARS_HTTP_PORT}`,
+        trace: 'on-first-retry',
+      },
+    },
+    {
       name: 'main-fetch-cloudflare',
       testMatch: /main-fetch\.spec\.ts/,
       use: {

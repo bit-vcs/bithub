@@ -9,6 +9,7 @@
     "test:e2e:cf": "playwright test --project main-fetch-cloudflare",
     "test:e2e:ci": "playwright test --project ci-webhook",
     "test:e2e:git": "playwright test --project commits-branches",
+    "test:e2e:features": "playwright test --project features",
     "deploy": "moon build --target js && wrangler deploy",
     "dev:worker": "moon build --target js && wrangler dev",
     "test:e2e:headed": "playwright test --headed",

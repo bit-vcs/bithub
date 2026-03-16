@@ -154,6 +154,34 @@ pub fn create_app() -> @mars.Server {
       if route == "/branches" {
         return ctx.html(render_branches_page(api), status=200)
       }
+      if route == "/search" {
+        let q = query_param(raw_path, "q").unwrap_or("")
+        return ctx.html(render_search_page(api, q), status=200)
+      }
+      if route == "/issues" {
+        return ctx.html(render_issues_page(api), status=200)
+      }
+      if route.has_prefix("/issues/") {
+        let id = String::unsafe_substring(
+          route,
+          start="/issues/".length(),
+          end=route.length(),
+        )
+        let page = render_issue_detail_page(api, id)
+        return ctx.html(page.html, status=page.status)
+      }
+      if route == "/activity" {
+        return ctx.html(render_activity_page(api), status=200)
+      }
+      if route.has_prefix("/compare/") {
+        let spec = String::unsafe_substring(
+          route,
+          start="/compare/".length(),
+          end=route.length(),
+        )
+        let page = render_compare_page(api, spec)
+        return ctx.html(page.html, status=page.status)
+      }
       if route == "/actions/workflows" {
         return ctx.html(render_workflows_page(api), status=200)
       }
@@ -439,7 +467,11 @@ fn render_layout(
             @luna.text(" | "),
             @components.link("/branches", [@luna.text("branches")]),
             @luna.text(" | "),
-            @components.link("/actions/workflows", [@luna.text("workflows")]),
+            @components.link("/issues", [@luna.text("issues")]),
+            @luna.text(" | "),
+            @components.link("/activity", [@luna.text("activity")]),
+            @luna.text(" | "),
+            @components.link("/search?q=", [@luna.text("search")]),
             @luna.text(" | "),
             @components.link("/actions", [@luna.text("actions")]),
           ],
@@ -568,6 +600,342 @@ fn find_char(s : String, target : Char) -> Int {
     idx += 1
   }
   -1
+}
+
+///|
+fn render_search_page(api : @core.ApiState, query : String) -> String {
+  let content : Array[@luna.Node[Unit, String]] = [
+    @luna.h("h1", [], [@luna.text("Search")]),
+    @luna.h(
+      "form",
+      [("method", @luna.attr_static("get")), ("action", @luna.attr_static("/search"))],
+      [
+        @luna.h(
+          "input",
+          [
+            ("type", @luna.attr_static("text")),
+            ("name", @luna.attr_static("q")),
+            ("value", @luna.attr_static(query)),
+            ("placeholder", @luna.attr_static("Search code...")),
+            (
+              "style",
+              @luna.attr_static(
+                "width:100%;max-width:500px;padding:8px;font-size:16px;",
+              ),
+            ),
+          ],
+          [],
+        ),
+      ],
+    ),
+  ]
+  if query.length() > 0 {
+    let results = api.search(query)
+    content.push(
+      @luna.h("p", [], [
+        @luna.text(
+          results.length().to_string() + " results for \"" + query + "\"",
+        ),
+      ]),
+    )
+    let result_nodes : Array[@luna.Node[Unit, String]] = []
+    for r in results {
+      result_nodes.push(
+        @luna.h("li", [], [
+          @components.link(
+            "/file?path=" + r.path,
+            [@luna.text(r.path + ":" + r.line_number.to_string())],
+          ),
+          @luna.h("pre", [("class", @luna.attr_static("source-code"))], [
+            @luna.h("code", [], [@luna.text(r.line)]),
+          ]),
+        ]),
+      )
+    }
+    if result_nodes.length() > 0 {
+      content.push(@luna.h("ul", [], result_nodes))
+    }
+  }
+  render_layout("Search", content)
+}
+
+///|
+fn render_issues_page(api : @core.ApiState) -> String {
+  let issues = api.list_issues()
+  let rows : Array[@luna.Node[Unit, String]] = []
+  for issue in issues {
+    let state_label = if issue.state == "open" { "🟢" } else { "🟣" }
+    rows.push(
+      @luna.h("tr", [], [
+        @luna.h("td", [], [
+          @components.link(
+            "/issues/" + issue.id,
+            [@luna.text("#" + issue.id)],
+          ),
+        ]),
+        @luna.h("td", [], [@luna.text(issue.title)]),
+        @luna.h("td", [], [@luna.text(state_label + " " + issue.state)]),
+        @luna.h("td", [], [@luna.text(issue.author)]),
+      ]),
+    )
+  }
+  if rows.length() == 0 {
+    rows.push(
+      @luna.h("tr", [], [
+        @luna.h("td", [("colspan", @luna.attr_static("4"))], [
+          @luna.text("No issues"),
+        ]),
+      ]),
+    )
+  }
+  let table = @luna.h("table", [("class", @luna.attr_static("wf-table"))], [
+    @luna.h("thead", [], [
+      @luna.h("tr", [], [
+        @luna.h("th", [], [@luna.text("ID")]),
+        @luna.h("th", [], [@luna.text("Title")]),
+        @luna.h("th", [], [@luna.text("State")]),
+        @luna.h("th", [], [@luna.text("Author")]),
+      ]),
+    ]),
+    @luna.h("tbody", [], rows),
+  ])
+  render_layout("Issues", [
+    @luna.h("h1", [], [@luna.text("Issues")]),
+    table,
+  ])
+}
+
+///|
+fn render_issue_detail_page(
+  api : @core.ApiState,
+  id : String,
+) -> PageHtml {
+  match api.get_issue(id) {
+    Some(detail) => {
+      let state_label = if detail.issue.state == "open" {
+        "open"
+      } else {
+        "closed"
+      }
+      let content : Array[@luna.Node[Unit, String]] = [
+        @luna.h("h1", [], [
+          @luna.text("#" + detail.issue.id + " " + detail.issue.title),
+        ]),
+        @luna.h("p", [], [
+          @luna.text(
+            "state: " +
+            state_label +
+            " | author: " +
+            detail.issue.author +
+            " | created: " +
+            detail.issue.created_at,
+          ),
+        ]),
+      ]
+      if detail.issue.body.length() > 0 {
+        content.push(
+          @components.region(
+            aria_label="issue body",
+            [@luna.raw_html(@markdown.md_to_html(detail.issue.body))],
+          ),
+        )
+      }
+      if detail.comments.length() > 0 {
+        content.push(
+          @luna.h("h2", [], [
+            @luna.text(
+              "Comments (" + detail.comments.length().to_string() + ")",
+            ),
+          ]),
+        )
+        for comment in detail.comments {
+          content.push(
+            @luna.h(
+              "div",
+              [
+                (
+                  "style",
+                  @luna.attr_static(
+                    "border:1px solid var(--border);border-radius:6px;padding:12px;margin:8px 0;",
+                  ),
+                ),
+              ],
+              [
+                @luna.h("p", [], [
+                  @luna.h("strong", [], [@luna.text(comment.author)]),
+                  @luna.text(" · " + comment.created_at),
+                ]),
+                @luna.raw_html(@markdown.md_to_html(comment.body)),
+              ],
+            ),
+          )
+        }
+      }
+      { status: 200, html: render_layout("#" + id + " " + detail.issue.title, content) }
+    }
+    None => {
+      status: 404,
+      html: render_layout("Issue", [
+        @luna.h("h1", [], [@luna.text("Issue #" + id)]),
+        @luna.h("p", [], [@luna.text("issue not found")]),
+      ]),
+    }
+  }
+}
+
+///|
+fn render_activity_page(api : @core.ApiState) -> String {
+  let events = api.activity_feed()
+  let items : Array[@luna.Node[Unit, String]] = []
+  for event in events {
+    let href = match event.kind {
+      "commit" => "/commit/" + event.id
+      "ci_run" => "/actions/runs/" + event.id
+      "issue" => "/issues/" + event.id
+      _ => "#"
+    }
+    items.push(
+      @luna.h("tr", [], [
+        @luna.h("td", [], [@luna.text(event.kind)]),
+        @luna.h("td", [], [
+          @components.link(href, [@luna.text(event.title)]),
+        ]),
+        @luna.h("td", [], [@luna.text(event.detail)]),
+        @luna.h("td", [], [@luna.text(event.timestamp)]),
+      ]),
+    )
+  }
+  if items.length() == 0 {
+    items.push(
+      @luna.h("tr", [], [
+        @luna.h("td", [("colspan", @luna.attr_static("4"))], [
+          @luna.text("No activity"),
+        ]),
+      ]),
+    )
+  }
+  let table = @luna.h("table", [("class", @luna.attr_static("wf-table"))], [
+    @luna.h("thead", [], [
+      @luna.h("tr", [], [
+        @luna.h("th", [], [@luna.text("Type")]),
+        @luna.h("th", [], [@luna.text("Event")]),
+        @luna.h("th", [], [@luna.text("Detail")]),
+        @luna.h("th", [], [@luna.text("Time")]),
+      ]),
+    ]),
+    @luna.h("tbody", [], items),
+  ])
+  render_layout("Activity", [
+    @luna.h("h1", [], [@luna.text("Activity")]),
+    table,
+  ])
+}
+
+///|
+fn render_compare_page(
+  api : @core.ApiState,
+  spec : String,
+) -> PageHtml {
+  // spec format: "base...head"
+  let parts = match spec.find("...") {
+    Some(i) => {
+      let base = String::unsafe_substring(spec, start=0, end=i)
+      let head = String::unsafe_substring(spec, start=i + 3, end=spec.length())
+      Some((base, head))
+    }
+    None => None
+  }
+  match parts {
+    None => {
+      status: 400,
+      html: render_layout("Compare", [
+        @luna.h("h1", [], [@luna.text("Compare")]),
+        @luna.h("p", [], [
+          @luna.text("usage: /compare/base...head"),
+        ]),
+      ]),
+    }
+    Some((base, head)) =>
+      match api.compare_commits(base, head) {
+        Some(result) => {
+          let content : Array[@luna.Node[Unit, String]] = [
+            @luna.h("h1", [], [
+              @luna.text("Compare: " + base + "..." + head),
+            ]),
+            @luna.h("p", [], [
+              @luna.text(
+                result.commits.length().to_string() +
+                " commits, " +
+                result.all_files.length().to_string() +
+                " files changed",
+              ),
+            ]),
+          ]
+          // Commit list
+          if result.commits.length() > 0 {
+            content.push(
+              @luna.h("h2", [], [@luna.text("Commits")]),
+            )
+            let commit_nodes : Array[@luna.Node[Unit, String]] = []
+            for c in result.commits {
+              let first_line = match c.message.find("\n") {
+                Some(i) =>
+                  String::unsafe_substring(c.message, start=0, end=i)
+                None => c.message
+              }
+              commit_nodes.push(
+                @luna.h("li", [], [
+                  @components.link(
+                    "/commit/" + c.sha,
+                    [@luna.text(c.sha)],
+                  ),
+                  @luna.text(" " + first_line),
+                ]),
+              )
+            }
+            content.push(@luna.h("ul", [], commit_nodes))
+          }
+          // Changed files
+          if result.all_files.length() > 0 {
+            content.push(
+              @luna.h("h2", [], [@luna.text("Files changed")]),
+            )
+            let file_nodes : Array[@luna.Node[Unit, String]] = []
+            for df in result.all_files {
+              file_nodes.push(
+                @luna.h("li", [], [
+                  @luna.h("strong", [], [@luna.text(df.path)]),
+                  @luna.text(" [" + df.kind + "]"),
+                  if df.patch.length() > 0 {
+                    @luna.h(
+                      "pre",
+                      [("class", @luna.attr_static("source-code"))],
+                      [@luna.h("code", [], [@luna.text(df.patch)])],
+                    )
+                  } else {
+                    @luna.text("")
+                  },
+                ]),
+              )
+            }
+            content.push(@luna.h("ul", [], file_nodes))
+          }
+          {
+            status: 200,
+            html: render_layout("Compare: " + base + "..." + head, content),
+          }
+        }
+        None => {
+          status: 404,
+          html: render_layout("Compare", [
+            @luna.h("h1", [], [
+              @luna.text("Compare: " + base + "..." + head),
+            ]),
+            @luna.h("p", [], [@luna.text("no commits found between these refs")]),
+          ]),
+        }
+      }
+  }
 }
 
 ///|

@@ -293,6 +293,27 @@ fn seed_files(kv : &Storage) -> Unit {
     #|- keep adapter replaceable
     #|- cloudflare js target first
   kv.set_string("docs/notes.txt", notes)
+  // Seed: issues
+  kv.set_string(
+    "issues/1/meta",
+    "title=Add relay webhook E2E tests\nstate=closed\nauthor=mizchi\ncreated_at=1773640000",
+  )
+  kv.set_string(
+    "issues/1/body",
+    "We need E2E tests for the relay webhook → CI run flow.\n\nShould cover:\n- Happy path (pending → success)\n- Failure propagation\n- Permission enforcement",
+  )
+  kv.set_string(
+    "issues/1/comments/0",
+    "author=ci-bot\nbody=Implemented in PR #2. 21 test cases added.\ncreated_at=1773650000",
+  )
+  kv.set_string(
+    "issues/2/meta",
+    "title=Support Cloudflare R2 as storage backend\nstate=open\nauthor=mizchi\ncreated_at=1773660000",
+  )
+  kv.set_string(
+    "issues/2/body",
+    "The Storage trait is ready. We need an R2 implementation that:\n- Uses Cloudflare R2 binding via FFI\n- Maps get/set_string/list/has to R2 API\n- Handles prefix listing efficiently",
+  )
   // Seed: auth tokens
   kv.set_string("auth/tokens/tok-owner-001", "identity=mizchi\nrole=owner")
   kv.set_string("auth/tokens/tok-write-001", "identity=ci-bot\nrole=write")
@@ -762,4 +783,292 @@ fn join_path(parent : String, child : String) -> String {
   } else {
     parent + "/" + child
   }
+}
+
+// ---- Code Search ----
+
+///|
+pub struct SearchResult {
+  path : String
+  line_number : Int
+  line : String
+}
+
+///|
+pub fn ApiState::search(
+  self : ApiState,
+  query : String,
+  max_results~ : Int = 50,
+) -> Array[SearchResult] {
+  if query.length() == 0 {
+    return []
+  }
+  let results : Array[SearchResult] = []
+  collect_search_results(self.store, "", query, results, max_results)
+  results
+}
+
+///|
+fn collect_search_results(
+  store : &Storage,
+  prefix : String,
+  query : String,
+  results : Array[SearchResult],
+  max_results : Int,
+) -> Unit {
+  if results.length() >= max_results {
+    return
+  }
+  let names = store.list(prefix)
+  names.sort_by(fn(a, b) { String::compare(a, b) })
+  for name in names {
+    if results.length() >= max_results {
+      return
+    }
+    let full_path = join_path(prefix, name)
+    if store.has(full_path) {
+      // It's a file — search content
+      match store.get(full_path) {
+        Some(bytes) => {
+          let text = @utf8.decode_lossy(bytes)
+          let mut line_num = 1
+          for line_view in text.split("\n") {
+            if results.length() >= max_results {
+              return
+            }
+            let line = line_view.to_string()
+            if string_contains(line, query) {
+              results.push({ path: full_path, line_number: line_num, line })
+            }
+            line_num += 1
+          }
+        }
+        None => ()
+      }
+    } else {
+      // It's a directory — recurse
+      collect_search_results(store, full_path, query, results, max_results)
+    }
+  }
+}
+
+///|
+fn string_contains(haystack : String, needle : String) -> Bool {
+  if needle.length() == 0 {
+    return true
+  }
+  if needle.length() > haystack.length() {
+    return false
+  }
+  let limit = haystack.length() - needle.length()
+  for i = 0; i <= limit; i = i + 1 {
+    let mut matched = true
+    for j = 0; j < needle.length(); j = j + 1 {
+      if haystack.unsafe_get(i + j) != needle.unsafe_get(j) {
+        matched = false
+        break
+      }
+    }
+    if matched {
+      return true
+    }
+  }
+  false
+}
+
+// ---- Issues ----
+
+///|
+pub struct IssueEntry {
+  id : String
+  title : String
+  state : String
+  body : String
+  author : String
+  created_at : String
+}
+
+///|
+pub struct IssueComment {
+  author : String
+  body : String
+  created_at : String
+}
+
+///|
+pub struct IssueDetail {
+  issue : IssueEntry
+  comments : Array[IssueComment]
+}
+
+///|
+pub fn ApiState::list_issues(self : ApiState) -> Array[IssueEntry] {
+  let ids = self.store.list("issues")
+  let entries : Array[IssueEntry] = []
+  for id in ids {
+    match self.store.get("issues/" + id + "/meta") {
+      Some(bytes) => {
+        let fields = parse_kv_fields(@utf8.decode_lossy(bytes))
+        entries.push({
+          id,
+          title: fields.get("title").unwrap_or(""),
+          state: fields.get("state").unwrap_or("open"),
+          body: "",
+          author: fields.get("author").unwrap_or(""),
+          created_at: fields.get("created_at").unwrap_or(""),
+        })
+      }
+      None => ()
+    }
+  }
+  entries.sort_by(fn(a, b) { String::compare(b.created_at, a.created_at) })
+  entries
+}
+
+///|
+pub fn ApiState::get_issue(self : ApiState, id : String) -> IssueDetail? {
+  match self.store.get("issues/" + id + "/meta") {
+    Some(bytes) => {
+      let fields = parse_kv_fields(@utf8.decode_lossy(bytes))
+      let body = match self.store.get("issues/" + id + "/body") {
+        Some(b) => @utf8.decode_lossy(b)
+        None => ""
+      }
+      let issue : IssueEntry = {
+        id,
+        title: fields.get("title").unwrap_or(""),
+        state: fields.get("state").unwrap_or("open"),
+        body,
+        author: fields.get("author").unwrap_or(""),
+        created_at: fields.get("created_at").unwrap_or(""),
+      }
+      let comment_ids = self.store.list("issues/" + id + "/comments")
+      let comments : Array[IssueComment] = []
+      for cid in comment_ids {
+        match self.store.get("issues/" + id + "/comments/" + cid) {
+          Some(cbytes) => {
+            let cf = parse_kv_fields(@utf8.decode_lossy(cbytes))
+            comments.push({
+              author: cf.get("author").unwrap_or(""),
+              body: cf.get("body").unwrap_or(""),
+              created_at: cf.get("created_at").unwrap_or(""),
+            })
+          }
+          None => ()
+        }
+      }
+      Some({ issue, comments })
+    }
+    None => None
+  }
+}
+
+// ---- Activity Feed ----
+
+///|
+pub struct ActivityEvent {
+  kind : String // "commit", "ci_run", "issue"
+  id : String
+  title : String
+  timestamp : String
+  detail : String
+}
+
+///|
+pub fn ApiState::activity_feed(
+  self : ApiState,
+  limit~ : Int = 20,
+) -> Array[ActivityEvent] {
+  let events : Array[ActivityEvent] = []
+  // Commits
+  for commit in self.list_commits() {
+    let first_line = match commit.message.find("\n") {
+      Some(i) => String::unsafe_substring(commit.message, start=0, end=i)
+      None => commit.message
+    }
+    events.push({
+      kind: "commit",
+      id: commit.sha,
+      title: first_line,
+      timestamp: commit.timestamp,
+      detail: commit.author,
+    })
+  }
+  // CI runs
+  for run in self.list_ci_runs() {
+    events.push({
+      kind: "ci_run",
+      id: run.id,
+      title: run.workflow_name + " [" + run.status + "]",
+      timestamp: run.triggered_at,
+      detail: "ref: " + run.ref_name,
+    })
+  }
+  // Issues
+  for issue in self.list_issues() {
+    events.push({
+      kind: "issue",
+      id: issue.id,
+      title: "#" + issue.id + " " + issue.title,
+      timestamp: issue.created_at,
+      detail: issue.author,
+    })
+  }
+  events.sort_by(fn(a, b) { String::compare(b.timestamp, a.timestamp) })
+  let result : Array[ActivityEvent] = []
+  for i in 0..<events.length() {
+    if i >= limit {
+      break
+    }
+    result.push(events[i])
+  }
+  result
+}
+
+// ---- Compare (Branch Diff) ----
+
+///|
+pub struct CompareResult {
+  base_sha : String
+  head_sha : String
+  commits : Array[CommitEntry]
+  all_files : Array[DiffFileEntry]
+}
+
+///|
+pub fn ApiState::compare_commits(
+  self : ApiState,
+  base_sha : String,
+  head_sha : String,
+) -> CompareResult? {
+  // Walk from head back to base, collecting commits and diffs
+  let commits : Array[CommitEntry] = []
+  let all_files : Array[DiffFileEntry] = []
+  let seen : Map[String, Bool] = {}
+  let mut current = head_sha
+  let mut found_base = false
+  // Walk up to 100 commits to prevent infinite loops
+  for i = 0; i < 100; i = i + 1 {
+    if current.length() == 0 || current == base_sha {
+      found_base = current == base_sha
+      break
+    }
+    match self.get_commit(current) {
+      Some(detail) => {
+        commits.push(detail.commit)
+        for df in detail.diff_files {
+          if not(seen.contains(df.path)) {
+            seen.set(df.path, true)
+            all_files.push(df)
+          }
+        }
+        current = detail.parent_sha
+      }
+      None => break
+    }
+  }
+  if not(found_base) && commits.length() == 0 {
+    return None
+  }
+  Some({ base_sha, head_sha, commits, all_files })
 }

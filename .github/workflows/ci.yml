@@ -80,6 +80,9 @@ jobs:
       - name: Run Playwright commits/branches tests
         run: pnpm test:e2e:git
 
+      - name: Run Playwright feature tests
+        run: pnpm test:e2e:features
+
   bench:
     name: Moon benchmark
     runs-on: ubuntu-latest
