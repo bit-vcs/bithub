@@ -346,6 +346,8 @@ fn seed_files(kv : &Storage) -> Unit {
   kv.set_string("auth/tokens/tok-owner-001", "identity=mizchi\nrole=owner")
   kv.set_string("auth/tokens/tok-write-001", "identity=ci-bot\nrole=write")
   kv.set_string("auth/tokens/tok-read-001", "identity=viewer\nrole=read")
+  kv.set_string("auth/tokens/tok-alice", "identity=agent-alice\nrole=owner")
+  kv.set_string("auth/tokens/tok-bob", "identity=agent-bob\nrole=write")
   // Seed: branches
   kv.set_string(
     "git/branches/main",

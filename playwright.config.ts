@@ -52,6 +52,14 @@ export default defineConfig({
       },
     },
     {
+      name: 'multi-agent',
+      testMatch: /multi-agent\.spec\.ts/,
+      use: {
+        baseURL: `http://127.0.0.1:${MARS_HTTP_PORT}`,
+        trace: 'on-first-retry',
+      },
+    },
+    {
       name: 'extras',
       testMatch: /extras\.spec\.ts/,
       use: {
