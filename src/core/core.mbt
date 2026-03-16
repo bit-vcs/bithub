@@ -49,6 +49,11 @@ pub fn mars_route_specs() -> Array[RouteSpec] {
       path: "/branches",
     },
     {
+      id: "blame",
+      http_method: "GET",
+      path: "/blame",
+    },
+    {
       id: "issues_create",
       http_method: "POST",
       path: "/api/issues",

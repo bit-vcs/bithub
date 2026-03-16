@@ -143,6 +143,54 @@ test.describe('branch edge cases', () => {
   });
 });
 
+test.describe('blame view', () => {
+  test('blame page shows line numbers and content', async ({ page }) => {
+    const res = await page.goto('/blame?path=README.md');
+    expect(res!.status()).toBe(200);
+    await expect(
+      page.getByRole('heading', { name: /Blame.*README/ }),
+    ).toBeVisible();
+    // Should have line numbers
+    await expect(page.getByText('1').first()).toBeVisible();
+    // Should have a link to view the file
+    await expect(page.getByRole('link', { name: 'view file' })).toBeVisible();
+  });
+
+  test('blame page shows commit SHA links', async ({ page }) => {
+    await page.goto('/blame?path=README.md');
+    // Each line should have a commit link
+    const commitLinks = page.getByRole('link').filter({ hasText: /^[a-f0-9]{7}$/ });
+    await expect(commitLinks.first()).toBeVisible();
+  });
+
+  test('blame for nonexistent file returns 404', async ({ page }) => {
+    const res = await page.goto('/blame?path=nonexistent.txt');
+    expect(res!.status()).toBe(404);
+  });
+
+  test('blame with no path returns 400', async ({ page }) => {
+    const res = await page.goto('/blame?path=');
+    expect(res!.status()).toBe(400);
+  });
+
+  test('blame page renders without JavaScript', async ({
+    browser,
+    baseURL,
+  }) => {
+    const ctx = await browser.newContext({
+      baseURL,
+      javaScriptEnabled: false,
+    });
+    const page = await ctx.newPage();
+    const res = await page.goto('/blame?path=README.md');
+    expect(res!.status()).toBe(200);
+    await expect(
+      page.getByRole('heading', { name: /Blame/ }),
+    ).toBeVisible();
+    await ctx.close();
+  });
+});
+
 test.describe('navigation', () => {
   test('nav bar has commits and branches links', async ({ page }) => {
     await page.goto('/');

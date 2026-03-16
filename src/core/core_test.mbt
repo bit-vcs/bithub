@@ -1,7 +1,7 @@
 ///|
 test "mars_route_specs contains API routes" {
   let routes = mars_route_specs()
-  inspect(routes.length(), content="16")
+  inspect(routes.length(), content="17")
   inspect(routes[0].http_method, content="GET")
   inspect(routes[0].path, content="/")
   inspect(routes[1].http_method, content="GET")
@@ -16,12 +16,13 @@ test "mars_route_specs contains API routes" {
   inspect(routes[9].path, content="/commits")
   inspect(routes[10].path, content="/commit/:sha")
   inspect(routes[11].path, content="/branches")
-  inspect(routes[12].path, content="/api/issues")
-  inspect(routes[13].path, content="/api/issues/:id/comments")
-  inspect(routes[14].http_method, content="POST")
-  inspect(routes[14].path, content="/api/webhook/relay")
+  inspect(routes[12].path, content="/blame")
+  inspect(routes[13].path, content="/api/issues")
+  inspect(routes[14].path, content="/api/issues/:id/comments")
   inspect(routes[15].http_method, content="POST")
-  inspect(routes[15].path, content="/api/actions/runs/status")
+  inspect(routes[15].path, content="/api/webhook/relay")
+  inspect(routes[16].http_method, content="POST")
+  inspect(routes[16].path, content="/api/actions/runs/status")
 }
 
 ///|

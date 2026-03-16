@@ -473,6 +473,11 @@ pub fn create_app_with_storage(api : @core.ApiState) -> @mars.Server {
         let page = render_pull_detail_page(api, id)
         return ctx.html(page.html, status=page.status)
       }
+      if route == "/blame" {
+        let path = query_param(raw_path, "path").unwrap_or("")
+        let page = render_blame_page(api, path)
+        return ctx.html(page.html, status=page.status)
+      }
       if route == "/actions/workflows" {
         return ctx.html(render_workflows_page(api), status=200)
       }
@@ -973,6 +978,129 @@ fn extract_json_string(json : Json, key : String) -> String {
         _ => ""
       }
     _ => ""
+  }
+}
+
+///|
+fn render_blame_page(api : @core.ApiState, raw_path : String) -> PageHtml {
+  if raw_path.length() == 0 {
+    return {
+      status: 400,
+      html: render_layout("Blame", [
+        @luna.h("h1", [], [@luna.text("Blame")]),
+        @luna.h("p", [], [@luna.text("usage: /blame?path=file")]),
+      ]),
+    }
+  }
+  match api.blame(raw_path) {
+    Some(lines) => {
+      let rows : Array[@luna.Node[Unit, String]] = []
+      for line in lines {
+        let short_sha = if line.commit_sha.length() > 7 {
+          String::unsafe_substring(line.commit_sha, start=0, end=7)
+        } else {
+          line.commit_sha
+        }
+        // Extract just the name from "name <email>" format
+        let author_name = match line.author.find(" <") {
+          Some(i) => String::unsafe_substring(line.author, start=0, end=i)
+          None => line.author
+        }
+        rows.push(
+          @luna.h("tr", [], [
+            @luna.h(
+              "td",
+              [
+                (
+                  "style",
+                  @luna.attr_static(
+                    "text-align:right;padding-right:8px;user-select:none;opacity:0.5;",
+                  ),
+                ),
+              ],
+              [@luna.text(line.line_number.to_string())],
+            ),
+            @luna.h(
+              "td",
+              [
+                (
+                  "style",
+                  @luna.attr_static(
+                    "white-space:nowrap;padding-right:12px;font-size:12px;",
+                  ),
+                ),
+              ],
+              [
+                @components.link(
+                  "/commit/" + line.commit_sha,
+                  [@luna.text(short_sha)],
+                ),
+              ],
+            ),
+            @luna.h(
+              "td",
+              [
+                (
+                  "style",
+                  @luna.attr_static(
+                    "white-space:nowrap;padding-right:12px;font-size:12px;opacity:0.7;",
+                  ),
+                ),
+              ],
+              [@luna.text(author_name)],
+            ),
+            @luna.h(
+              "td",
+              [
+                (
+                  "style",
+                  @luna.attr_static(
+                    "white-space:pre;font-family:ui-monospace,Menlo,monospace;font-size:13px;",
+                  ),
+                ),
+              ],
+              [@luna.text(line.content)],
+            ),
+          ]),
+        )
+      }
+      let table = @luna.h(
+        "table",
+        [
+          (
+            "style",
+            @luna.attr_static(
+              "width:100%;border-collapse:collapse;font-size:13px;",
+            ),
+          ),
+        ],
+        [@luna.h("tbody", [], rows)],
+      )
+      {
+        status: 200,
+        html: render_layout("Blame: " + raw_path, [
+          @luna.h("h1", [], [@luna.text("Blame: " + raw_path)]),
+          @luna.h("p", [], [
+            @components.link(
+              "/file?path=" + raw_path,
+              [@luna.text("view file")],
+            ),
+          ]),
+          @luna.h(
+            "div",
+            [("style", @luna.attr_static("overflow-x:auto;"))],
+            [table],
+          ),
+        ]),
+      }
+    }
+    None => {
+      status: 404,
+      html: render_layout("Blame", [
+        @luna.h("h1", [], [@luna.text("Blame: " + raw_path)]),
+        @luna.h("p", [], [@luna.text("file not found")]),
+      ]),
+    }
   }
 }
 

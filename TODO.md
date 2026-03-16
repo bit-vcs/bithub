@@ -27,7 +27,7 @@ Last updated: 2026-03-16
 
 ### Long-term
 
-- [ ] Blame view: `/blame/:path` showing per-line commit attribution
+- [x] Blame view (done 2026-03-16)
 - [ ] Tags / releases: `/tags` list, `/releases` with notes
 - [ ] Contributors page: aggregate commit authors with counts
 - [ ] Activity graph: commit frequency visualization

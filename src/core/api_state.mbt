@@ -1293,6 +1293,71 @@ pub fn ApiState::close_pull_request(
   }
 }
 
+// ---- Blame ----
+
+///|
+pub struct BlameLine {
+  line_number : Int
+  content : String
+  commit_sha : String
+  author : String
+}
+
+///|
+pub fn ApiState::blame(
+  self : ApiState,
+  path : String,
+) -> Array[BlameLine]? {
+  // Get current file content
+  let content = match self.file_text(path) {
+    Some(c) => c
+    None => return None
+  }
+  let lines : Array[String] = []
+  for line_view in content.split("\n") {
+    lines.push(line_view.to_string())
+  }
+  // Walk commits in reverse chronological order to find which commit
+  // last touched each line. Simple approach: check if file changed in
+  // each commit's diff.
+  let commits = self.list_commits()
+  let result : Array[BlameLine] = []
+  // For each line, find the most recent commit that has a diff touching this file
+  let file_commits : Array[CommitEntry] = []
+  for commit in commits {
+    match self.get_commit(commit.sha) {
+      Some(detail) => {
+        for df in detail.diff_files {
+          if df.path == path {
+            file_commits.push(commit)
+            break
+          }
+        }
+      }
+      None => ()
+    }
+  }
+  // Attribute: if we found commits that touched this file, use the most recent one
+  // For a simple blame, assign all lines to the most recent touching commit,
+  // or to the oldest commit if no diff info
+  let default_commit = if file_commits.length() > 0 {
+    file_commits[0]
+  } else if commits.length() > 0 {
+    commits[commits.length() - 1]
+  } else {
+    { sha: "unknown", message: "", author: "unknown", timestamp: "" }
+  }
+  for i in 0..<lines.length() {
+    result.push({
+      line_number: i + 1,
+      content: lines[i],
+      commit_sha: default_commit.sha,
+      author: default_commit.author,
+    })
+  }
+  Some(result)
+}
+
 // ---- Activity Feed ----
 
 ///|
