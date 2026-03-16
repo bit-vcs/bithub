@@ -40,11 +40,13 @@ const TOOLS = [
     type: "function" as const,
     function: {
       name: "read_file",
-      description: "Read a file from the repository. Returns the file content as text.",
+      description: "Read a file from the repository. Returns the file content as text. Use start_line/end_line to read a specific range of a large file.",
       parameters: {
         type: "object",
         properties: {
           path: { type: "string", description: "File path relative to repo root" },
+          start_line: { type: "number", description: "Start line (1-based, inclusive). Omit to read from beginning." },
+          end_line: { type: "number", description: "End line (1-based, inclusive). Omit to read to end." },
         },
         required: ["path"],
       },
@@ -90,6 +92,23 @@ const TOOLS = [
           command: { type: "string", description: "Shell command to execute" },
         },
         required: ["command"],
+      },
+    },
+  },
+  {
+    type: "function" as const,
+    function: {
+      name: "patch_file",
+      description: "Replace, insert, or delete lines in a file. Specify start_line and end_line for the range to replace (1-based). Set content to empty string to delete lines. To insert before a line, set start_line = end_line = target_line and provide new content followed by original line.",
+      parameters: {
+        type: "object",
+        properties: {
+          path: { type: "string", description: "File path relative to repo root" },
+          start_line: { type: "number", description: "First line to replace (1-based, inclusive)" },
+          end_line: { type: "number", description: "Last line to replace (1-based, inclusive)" },
+          content: { type: "string", description: "Replacement content (lines joined by newlines). Empty string to delete." },
+        },
+        required: ["path", "start_line", "end_line", "content"],
       },
     },
   },
@@ -148,11 +167,15 @@ function executeTool(name: string, args: Record<string, unknown>): string {
         const filePath = path.resolve(REPO_ROOT, args.path as string);
         if (!fs.existsSync(filePath)) return `Error: file not found: ${args.path}`;
         const content = fs.readFileSync(filePath, "utf-8");
-        // Limit output to avoid token explosion
-        if (content.length > 8000) {
-          return content.slice(0, 8000) + `\n... (truncated, ${content.length} total chars)`;
+        const lines = content.split("\n");
+        const startLine = (args.start_line as number) || 1;
+        const endLine = (args.end_line as number) || lines.length;
+        const selected = lines.slice(startLine - 1, endLine);
+        const result = selected.map((l, i) => `${startLine + i}| ${l}`).join("\n");
+        if (result.length > 12000) {
+          return result.slice(0, 12000) + `\n... (truncated, ${lines.length} total lines)`;
         }
-        return content;
+        return result + `\n(${lines.length} total lines)`;
       }
       case "write_file": {
         const filePath = path.resolve(REPO_ROOT, args.path as string);
@@ -168,6 +191,21 @@ function executeTool(name: string, args: Record<string, unknown>): string {
           .filter((e) => !e.name.startsWith(".") && e.name !== "node_modules" && e.name !== "_build" && e.name !== ".mooncakes")
           .map((e) => `${e.isDirectory() ? "[dir]" : "[file]"} ${e.name}`)
           .join("\n");
+      }
+      case "patch_file": {
+        const filePath = path.resolve(REPO_ROOT, args.path as string);
+        if (!fs.existsSync(filePath)) return `Error: file not found: ${args.path}`;
+        const lines = fs.readFileSync(filePath, "utf-8").split("\n");
+        const startLine = (args.start_line as number) || 1;
+        const endLine = (args.end_line as number) || startLine;
+        const newContent = args.content as string;
+        const before = lines.slice(0, startLine - 1);
+        const after = lines.slice(endLine);
+        const replacement = newContent.length > 0 ? newContent.split("\n") : [];
+        const result = [...before, ...replacement, ...after];
+        fs.writeFileSync(filePath, result.join("\n"), "utf-8");
+        const diff = endLine - startLine + 1;
+        return `Patched ${args.path}: replaced lines ${startLine}-${endLine} (${diff} lines) with ${replacement.length} lines. File now has ${result.length} lines.`;
       }
       case "run": {
         const cmd = args.command as string;
@@ -197,7 +235,7 @@ function executeTool(name: string, args: Record<string, unknown>): string {
         const globArg = glob ? `--include='${glob}'` : "";
         try {
           const output = execSync(
-            `grep -rn ${globArg} --exclude-dir=node_modules --exclude-dir=_build --exclude-dir=.mooncakes --exclude-dir=.git --exclude-dir=.bithub ${JSON.stringify(query)} .`,
+            `grep -rn ${globArg} --exclude-dir=node_modules --exclude-dir=_build --exclude-dir=.mooncakes --exclude-dir=.git --exclude-dir=.bithub --exclude-dir=.wrangler --exclude-dir=test-results ${JSON.stringify(query)} src/`,
             { cwd: REPO_ROOT, timeout: 10_000, encoding: "utf-8", maxBuffer: 512 * 1024 },
           );
           const lines = output.split("\n").slice(0, 30);
@@ -283,7 +321,18 @@ async function llmWithTools(messages: Message[]): Promise<{
     let summary = "";
 
     for (const call of msg.tool_calls) {
-      const args = JSON.parse(call.function.arguments);
+      let args: Record<string, unknown>;
+      try {
+        args = JSON.parse(call.function.arguments);
+      } catch {
+        console.log(`  → ${call.function.name}(PARSE ERROR: ${call.function.arguments.slice(0, 100)})`);
+        messages.push({
+          role: "tool",
+          content: "Error: failed to parse tool arguments. Try again with simpler content.",
+          tool_call_id: call.id,
+        });
+        continue;
+      }
       console.log(`  → ${call.function.name}(${JSON.stringify(args).slice(0, 100)})`);
 
       const result = executeTool(call.function.name, args);
@@ -343,34 +392,66 @@ async function main() {
       content: `You are ${AGENT_NAME}, a coding agent working on the bithub project.
 bithub is a GitHub-like platform built in MoonBit with Playwright E2E tests.
 
-Your workflow:
+## Workflow
 1. Read the task/issue carefully
-2. Explore the codebase to understand the current state
+2. Explore the codebase (read_file with line ranges for large files)
 3. Make targeted changes to implement the task
-4. Run tests to verify your changes work
-5. If tests fail, read the errors and fix them
-6. When done, create a PR via bithub API and call done()
+4. Run "moon check --target js" to verify types
+5. Run "moon test --target js" to verify tests
+6. If tests fail, read errors, fix, and re-run
+7. When done, call done() with a summary
 
-Key commands:
-- moon check --target js     (type check)
+## Key Commands
+- moon check --target js     (type check - FAST, run after every edit)
 - moon test --target js       (unit tests)
-- moon build --target js      (build)
+- moon build --target js      (full build)
 
-File structure:
+## File Structure
 - src/core/*.mbt             (data layer: Storage, ApiState)
+- src/core/*_test.mbt        (black-box unit tests)
 - src/adapters/mars_http/    (HTTP server, routing, rendering)
 - src/cmd/                   (entry points)
 - e2e/*.spec.ts              (Playwright E2E tests)
 
-Code style: MoonBit with ///| block separators. Use existing patterns.
+## MoonBit Syntax Rules (CRITICAL)
+- Blocks separated by \`///|\` — every top-level item starts with \`///|\`
+- \`fn\` is private, \`pub fn\` is public. Tests in *_test.mbt can only call pub functions.
+- Type parameters: \`fn[T] identity(val: T) -> T\` (NOT \`fn identity[T]\`)
+- Error handling: \`fn parse(s: String) -> Int raise Error\` (NOT \`-> Int!Error\`)
+- No \`return\` needed — last expression is the return value
+- No \`++\`/\`--\` — use \`i += 1\`
+- \`for i in 0..<n { ... }\` for range loops
+- Variables: lower_snake_case. Types: UpperCamelCase.
+- \`let mut\` only for reassignment, not for Array.push() etc.
+- String interpolation: \`"hello \\{name}"\` (backslash-brace, no \`$\`)
+- Multi-line strings: \`#|line 1\\n#|line 2\`
+- Methods require Type:: prefix: \`pub fn ApiState::search(...)\`
+- Snapshot tests: \`inspect(value, content="expected")\`, update with \`moon test -u\`
+- \`match\` exhaustiveness required. Use \`_\` for wildcard.
+- Trait impl: \`pub impl Storage for MyType with get(self, key) { ... }\`
 
-IMPORTANT:
-- Make minimal, targeted changes. Don't rewrite entire files.
-- Use write_file to modify files, NOT sed or other shell commands.
-- When editing, read the file first, modify the content in your response, then write_file.
-- After making changes, always run "moon check --target js" to verify.
-- If a function is private (fn), you may need to make it pub (pub fn) to test it from _test.mbt.
-- When appending to a test file, read it first, then write the full content back with your additions.`,
+## Common Mistakes to Avoid
+- Don't use uppercase for variables/functions
+- Don't forget \`///|\` before each top-level block
+- Don't use \`try\` for error propagation — it's automatic
+- Don't use \`await\` — MoonBit has no await keyword
+- Don't use sed/awk to edit files — use write_file tool
+- Don't rewrite entire large files — use read_file with line ranges, then write only the changed portion
+
+## Editing Strategy for Large Files
+1. read_file(path) to see total line count
+2. read_file(path, start_line=X, end_line=Y) to read specific sections
+3. search(query) to find the exact location
+4. Use patch_file(path, start_line, end_line, content) to replace specific lines
+   - To change "fn foo" to "pub fn foo" on line 42: patch_file(path, 42, 42, "pub fn foo")
+   - To delete lines 10-15: patch_file(path, 10, 15, "")
+   - To insert after line 20: patch_file(path, 21, 20, "new line content") [start > end = insert]
+5. For NEW files, use write_file
+
+## Test Patterns
+- Black-box tests in *_test.mbt: \`test "name" { inspect(fn_call(), content="expected") }\`
+- Use \`@json.inspect()\` for complex values
+- Run \`moon test --target js -f filename.mbt\` to test a specific file`,
     },
     {
       role: "user",

@@ -1139,7 +1139,7 @@ pub fn ApiState::list_webhooks(self : ApiState) -> Array[WebhookLogEntry] {
 }
 
 ///|
-fn parse_int_safe(s : String) -> Int {
+pub fn parse_int_safe(s : String) -> Int {
   let mut n = 0
   for c in s {
     if c >= '0' && c <= '9' {

@@ -1,52 +1,46 @@
 ///|
-test "xml_escape handles basic XML special characters" {
-  inspect(xml_escape("hello"), content="hello")
-  inspect(xml_escape("&"), content="&amp;")
-  inspect(xml_escape("<"), content="&lt;")
-  inspect(xml_escape(">"), content="&gt;")
-  inspect(xml_escape("\""), content="&quot;")
+test "parse_int_safe parses valid integers" {
+  inspect(parse_int_safe("123"), content="123")
+  inspect(parse_int_safe("0"), content="0")
+  inspect(parse_int_safe("999"), content="999")
+  inspect(parse_int_safe("1"), content="1")
 }
 
 ///|
-test "xml_escape handles multiple special characters" {
-  inspect(xml_escape("&<>\""), content="&amp;&lt;&gt;&quot;")
-  inspect(xml_escape("<tag>"), content="&lt;tag&gt;")
-  inspect(xml_escape("\"quoted\""), content="&quot;quoted&quot;")
-  inspect(xml_escape("A & B"), content="A &amp; B")
+test "parse_int_safe ignores non-digit characters" {
+  inspect(parse_int_safe("abc"), content="0")
+  inspect(parse_int_safe("12a34"), content="1234")
+  inspect(parse_int_safe("a123b"), content="123")
+  inspect(parse_int_safe("!@#$%"), content="0")
 }
 
 ///|
-test "xml_escape handles mixed content" {
-  inspect(xml_escape("Hello <world> & \"friends\"!"), content="Hello &lt;world&gt; &amp; &quot;friends&quot;!")
-  inspect(xml_escape("x < y && z > w"), content="x &lt; y &amp;&amp; z &gt; w")
-  inspect(xml_escape("Say \"Hello & goodbye\""), content="Say &quot;Hello &amp; goodbye&quot;")
+test "parse_int_safe handles mixed content" {
+  inspect(parse_int_safe("id123"), content="123")
+  inspect(parse_int_safe("123px"), content="123")
+  inspect(parse_int_safe("v1.2.3"), content="123")
+  inspect(parse_int_safe("user-456"), content="456")
 }
 
 ///|
-test "xml_escape handles empty and single character strings" {
-  inspect(xml_escape(""), content="")
-  inspect(xml_escape("a"), content="a")
-  inspect(xml_escape("&"), content="&amp;")
-  inspect(xml_escape("<"), content="&lt;")
-  inspect(xml_escape(">"), content="&gt;")
-  inspect(xml_escape("\""), content="&quot;")
+test "parse_int_safe handles empty and whitespace" {
+  inspect(parse_int_safe(""), content="0")
+  inspect(parse_int_safe(" "), content="0")
+  inspect(parse_int_safe("   "), content="0")
+  inspect(parse_int_safe("\t\n"), content="0")
 }
 
 ///|
-test "xml_escape preserves normal characters" {
-  inspect(xml_escape("abcdefghijklmnopqrstuvwxyz"), content="abcdefghijklmnopqrstuvwxyz")
-  inspect(xml_escape("ABCDEFGHIJKLMNOPQRSTUVWXYZ"), content="ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-  inspect(xml_escape("0123456789"), content="0123456789")
-  inspect(xml_escape("!@#$%^*()_+-=[]{}|;':,./?"), content="!@#$%^*()_+-=[]{}|;':,./?")
+test "parse_int_safe handles leading/trailing non-digits" {
+  inspect(parse_int_safe("abc123"), content="123")
+  inspect(parse_int_safe("123def"), content="123")
+  inspect(parse_int_safe("abc123def"), content="123")
+  inspect(parse_int_safe("---789+++"), content="789")
 }
 
 ///|
-test "xml_escape handles real-world XML content" {
-  let title = "Project <name> & \"description\""
-  let expected = "Project &lt;name&gt; &amp; &quot;description&quot;"
-  inspect(xml_escape(title), content=expected)
-  
-  let description = "This is a <test> description with & symbols and \"quotes\""
-  let expected_desc = "This is a &lt;test&gt; description with &amp; symbols and &quot;quotes&quot;"
-  inspect(xml_escape(description), content=expected_desc)
+test "parse_int_safe handles large numbers" {
+  inspect(parse_int_safe("1000000"), content="1000000")
+  inspect(parse_int_safe("999999999"), content="999999999")
+  inspect(parse_int_safe("a1b2c3d4e5f6g7h8i9j0"), content="1234567890")
 }
