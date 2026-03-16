@@ -45,15 +45,12 @@ Last updated: 2026-03-17
 
 ### Code quality
 
-- [ ] Fix deprecated syntax warnings (batch)
-  - `fn(ctx)` → `(ctx) => ...` in async handlers (8 occurrences in server.mbt)
-  - `f!(...)` → `f(...)` in ci.mbt
-  - `is_empty()` → `is None` in core_test.mbt (3 occurrences)
-- [ ] Move parse_kv_fields to storage.mbt or a shared utils file
-  - Currently in ci.mbt but used by api_state.mbt
-- [ ] Make route tests resilient to additions
-  - Replace index-based route checks with filter-based lookups (partially done)
-  - Test by route path/method, not by array index
+- [x] Fix deprecated is_none()/f!() and strconv import (done 2026-03-17, by agents)
+- [x] Move parse_kv_fields to storage.mbt (done 2026-03-17, by agent)
+- [x] Make route tests resilient (done 2026-03-17, by agent)
+- [ ] Fix remaining 9 deprecated warnings
+  - `fn(ctx)` → arrow function in 8 async handlers (server.mbt)
+  - `fn meth(self : Type, ..)` → `fn Type::meth(..)` in fs_storage.mbt
 
 ### Agent harness
 
