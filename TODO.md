@@ -20,9 +20,9 @@ Last updated: 2026-03-16
 
 ### Mid-term (features)
 
-- [ ] PR / merge request flow: create PR from compare, review UI, merge action
-- [ ] Webhook log: store received webhooks in Storage, add `/webhooks` page for debugging
-- [ ] Issue state change API: `PATCH /api/issues/:id` for close/reopen
+- [x] PR / merge request flow (done 2026-03-16)
+- [x] Webhook log (done 2026-03-16)
+- [x] Issue state change API (done 2026-03-16)
 - [ ] Notification via relay: publish events to bit-relay when issues/PRs change
 
 ### Long-term

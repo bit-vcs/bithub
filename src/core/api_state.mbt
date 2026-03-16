@@ -1050,6 +1050,249 @@ pub fn ApiState::add_comment(
   true
 }
 
+///|
+pub fn ApiState::update_issue_state(
+  self : ApiState,
+  id : String,
+  new_state : String,
+) -> Bool {
+  match self.store.get("issues/" + id + "/meta") {
+    Some(bytes) => {
+      let fields = parse_kv_fields(@utf8.decode_lossy(bytes))
+      let meta = [
+        "title=" + fields.get("title").unwrap_or(""),
+        "state=" + new_state,
+        "author=" + fields.get("author").unwrap_or(""),
+        "created_at=" + fields.get("created_at").unwrap_or(""),
+      ].join("\n")
+      self.store.set_string("issues/" + id + "/meta", meta)
+      true
+    }
+    None => false
+  }
+}
+
+// ---- Webhook Log ----
+
+///|
+pub struct WebhookLogEntry {
+  id : String
+  event_type : String
+  source : String
+  timestamp : String
+  triggered : Int
+}
+
+///|
+pub fn ApiState::log_webhook(
+  self : ApiState,
+  id : String,
+  event_type : String,
+  source : String,
+  timestamp : String,
+  triggered : Int,
+) -> Unit {
+  let meta = [
+    "event_type=" + event_type,
+    "source=" + source,
+    "timestamp=" + timestamp,
+    "triggered=" + triggered.to_string(),
+  ].join("\n")
+  self.store.set_string("webhooks/" + id, meta)
+}
+
+///|
+pub fn ApiState::list_webhooks(self : ApiState) -> Array[WebhookLogEntry] {
+  let ids = self.store.list("webhooks")
+  let entries : Array[WebhookLogEntry] = []
+  for id in ids {
+    match self.store.get("webhooks/" + id) {
+      Some(bytes) => {
+        let fields = parse_kv_fields(@utf8.decode_lossy(bytes))
+        entries.push({
+          id,
+          event_type: fields.get("event_type").unwrap_or(""),
+          source: fields.get("source").unwrap_or(""),
+          timestamp: fields.get("timestamp").unwrap_or(""),
+          triggered: match fields.get("triggered") {
+            Some(s) => parse_int_safe(s)
+            None => 0
+          },
+        })
+      }
+      None => ()
+    }
+  }
+  entries.sort_by(fn(a, b) { String::compare(b.timestamp, a.timestamp) })
+  entries
+}
+
+///|
+fn parse_int_safe(s : String) -> Int {
+  let mut n = 0
+  for c in s {
+    if c >= '0' && c <= '9' {
+      n = n * 10 + (c.to_int() - '0'.to_int())
+    }
+  }
+  n
+}
+
+// ---- Pull Requests ----
+
+///|
+pub struct PullRequest {
+  id : String
+  title : String
+  state : String // "open", "merged", "closed"
+  author : String
+  base_ref : String
+  head_ref : String
+  created_at : String
+}
+
+///|
+pub struct PullRequestDetail {
+  pr : PullRequest
+  body : String
+  compare : CompareResult?
+}
+
+///|
+pub fn ApiState::create_pull_request(
+  self : ApiState,
+  title : String,
+  body : String,
+  author : String,
+  base_ref : String,
+  head_ref : String,
+  timestamp : String,
+) -> String {
+  let existing = self.store.list("prs")
+  let mut max_id = 0
+  for id_str in existing {
+    let n = parse_int_safe(id_str)
+    if n > max_id {
+      max_id = n
+    }
+  }
+  let new_id = (max_id + 1).to_string()
+  let meta = [
+    "title=" + title,
+    "state=open",
+    "author=" + author,
+    "base_ref=" + base_ref,
+    "head_ref=" + head_ref,
+    "created_at=" + timestamp,
+  ].join("\n")
+  self.store.set_string("prs/" + new_id + "/meta", meta)
+  if body.length() > 0 {
+    self.store.set_string("prs/" + new_id + "/body", body)
+  }
+  new_id
+}
+
+///|
+pub fn ApiState::list_pull_requests(
+  self : ApiState,
+) -> Array[PullRequest] {
+  let ids = self.store.list("prs")
+  let entries : Array[PullRequest] = []
+  for id in ids {
+    match self.store.get("prs/" + id + "/meta") {
+      Some(bytes) => {
+        let fields = parse_kv_fields(@utf8.decode_lossy(bytes))
+        entries.push({
+          id,
+          title: fields.get("title").unwrap_or(""),
+          state: fields.get("state").unwrap_or("open"),
+          author: fields.get("author").unwrap_or(""),
+          base_ref: fields.get("base_ref").unwrap_or(""),
+          head_ref: fields.get("head_ref").unwrap_or(""),
+          created_at: fields.get("created_at").unwrap_or(""),
+        })
+      }
+      None => ()
+    }
+  }
+  entries.sort_by(fn(a, b) { String::compare(b.created_at, a.created_at) })
+  entries
+}
+
+///|
+pub fn ApiState::get_pull_request(
+  self : ApiState,
+  id : String,
+) -> PullRequestDetail? {
+  match self.store.get("prs/" + id + "/meta") {
+    Some(bytes) => {
+      let fields = parse_kv_fields(@utf8.decode_lossy(bytes))
+      let pr : PullRequest = {
+        id,
+        title: fields.get("title").unwrap_or(""),
+        state: fields.get("state").unwrap_or("open"),
+        author: fields.get("author").unwrap_or(""),
+        base_ref: fields.get("base_ref").unwrap_or(""),
+        head_ref: fields.get("head_ref").unwrap_or(""),
+        created_at: fields.get("created_at").unwrap_or(""),
+      }
+      let body = match self.store.get("prs/" + id + "/body") {
+        Some(b) => @utf8.decode_lossy(b)
+        None => ""
+      }
+      let compare = self.compare_commits(pr.base_ref, pr.head_ref)
+      Some({ pr, body, compare })
+    }
+    None => None
+  }
+}
+
+///|
+pub fn ApiState::merge_pull_request(
+  self : ApiState,
+  id : String,
+) -> Bool {
+  match self.store.get("prs/" + id + "/meta") {
+    Some(bytes) => {
+      let fields = parse_kv_fields(@utf8.decode_lossy(bytes))
+      let meta = [
+        "title=" + fields.get("title").unwrap_or(""),
+        "state=merged",
+        "author=" + fields.get("author").unwrap_or(""),
+        "base_ref=" + fields.get("base_ref").unwrap_or(""),
+        "head_ref=" + fields.get("head_ref").unwrap_or(""),
+        "created_at=" + fields.get("created_at").unwrap_or(""),
+      ].join("\n")
+      self.store.set_string("prs/" + id + "/meta", meta)
+      true
+    }
+    None => false
+  }
+}
+
+///|
+pub fn ApiState::close_pull_request(
+  self : ApiState,
+  id : String,
+) -> Bool {
+  match self.store.get("prs/" + id + "/meta") {
+    Some(bytes) => {
+      let fields = parse_kv_fields(@utf8.decode_lossy(bytes))
+      let meta = [
+        "title=" + fields.get("title").unwrap_or(""),
+        "state=closed",
+        "author=" + fields.get("author").unwrap_or(""),
+        "base_ref=" + fields.get("base_ref").unwrap_or(""),
+        "head_ref=" + fields.get("head_ref").unwrap_or(""),
+        "created_at=" + fields.get("created_at").unwrap_or(""),
+      ].join("\n")
+      self.store.set_string("prs/" + id + "/meta", meta)
+      true
+    }
+    None => false
+  }
+}
+
 // ---- Activity Feed ----
 
 ///|
@@ -1099,6 +1342,16 @@ pub fn ApiState::activity_feed(
       title: "#" + issue.id + " " + issue.title,
       timestamp: issue.created_at,
       detail: issue.author,
+    })
+  }
+  // Pull requests
+  for pr in self.list_pull_requests() {
+    events.push({
+      kind: "pr",
+      id: pr.id,
+      title: "PR #" + pr.id + " " + pr.title + " [" + pr.state + "]",
+      timestamp: pr.created_at,
+      detail: pr.author,
     })
   }
   events.sort_by(fn(a, b) { String::compare(b.timestamp, a.timestamp) })

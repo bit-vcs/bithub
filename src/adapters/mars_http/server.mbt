@@ -88,6 +88,17 @@ pub fn create_app_with_storage(api : @core.ApiState) -> @mars.Server {
               }
             None => ()
           }
+          // Log webhook
+          let event_id = extract_json_string(json, "event_id")
+          let event_type = extract_json_string(json, "event_type")
+          let source = extract_json_string(json, "source")
+          api.log_webhook(
+            event_id,
+            event_type,
+            source,
+            now_epoch_string(),
+            runs.length(),
+          )
           let resp : Map[String, Json] = {}
           resp.set("triggered", runs.length().to_json())
           ctx.json(resp.to_json())
@@ -262,6 +273,125 @@ pub fn create_app_with_storage(api : @core.ApiState) -> @mars.Server {
       }
     }),
   )
+  app.post(
+    "/api/issues/:id/state",
+    @mars.handler(fn(ctx) {
+      guard require_write(api, ctx) is Some(_) else { return }
+      let issue_id = ctx.param("id").unwrap_or("")
+      match ctx.body_json() {
+        Some(json) => {
+          guard json is Object(obj) else {
+            let e : Map[String, Json] = {}
+            e.set("error", "invalid payload".to_json())
+            return ctx.json(e.to_json(), status=400)
+          }
+          let state = match obj.get("state") {
+            Some(String(s)) => s
+            _ => {
+              let e : Map[String, Json] = {}
+              e.set("error", "missing state (open/closed)".to_json())
+              return ctx.json(e.to_json(), status=400)
+            }
+          }
+          let ok = api.update_issue_state(issue_id, state)
+          let resp : Map[String, Json] = {}
+          resp.set("ok", ok.to_json())
+          ctx.json(resp.to_json())
+        }
+        None => {
+          let e : Map[String, Json] = {}
+          e.set("error", "invalid json".to_json())
+          ctx.json(e.to_json(), status=400)
+        }
+      }
+    }),
+  )
+  app.post(
+    "/api/pulls",
+    @mars.handler(fn(ctx) {
+      guard require_write(api, ctx) is Some(token_info) else { return }
+      match ctx.body_json() {
+        Some(json) => {
+          guard json is Object(obj) else {
+            let e : Map[String, Json] = {}
+            e.set("error", "invalid payload".to_json())
+            return ctx.json(e.to_json(), status=400)
+          }
+          let title = match obj.get("title") {
+            Some(String(s)) => s
+            _ => {
+              let e : Map[String, Json] = {}
+              e.set("error", "missing title".to_json())
+              return ctx.json(e.to_json(), status=400)
+            }
+          }
+          let body = match obj.get("body") {
+            Some(String(s)) => s
+            _ => ""
+          }
+          let base_ref = match obj.get("base") {
+            Some(String(s)) => s
+            _ => {
+              let e : Map[String, Json] = {}
+              e.set("error", "missing base".to_json())
+              return ctx.json(e.to_json(), status=400)
+            }
+          }
+          let head_ref = match obj.get("head") {
+            Some(String(s)) => s
+            _ => {
+              let e : Map[String, Json] = {}
+              e.set("error", "missing head".to_json())
+              return ctx.json(e.to_json(), status=400)
+            }
+          }
+          let author = match obj.get("author") {
+            Some(String(s)) => s
+            _ => token_info.identity
+          }
+          let timestamp = timestamp_or_now(
+            match obj.get("timestamp") {
+              Some(String(s)) => s
+              _ => ""
+            },
+          )
+          let id = api.create_pull_request(
+            title, body, author, base_ref, head_ref, timestamp,
+          )
+          let resp : Map[String, Json] = {}
+          resp.set("id", id.to_json())
+          ctx.json(resp.to_json())
+        }
+        None => {
+          let e : Map[String, Json] = {}
+          e.set("error", "invalid json".to_json())
+          ctx.json(e.to_json(), status=400)
+        }
+      }
+    }),
+  )
+  app.post(
+    "/api/pulls/:id/merge",
+    @mars.handler(fn(ctx) {
+      guard require_write(api, ctx) is Some(_) else { return }
+      let pr_id = ctx.param("id").unwrap_or("")
+      let ok = api.merge_pull_request(pr_id)
+      let resp : Map[String, Json] = {}
+      resp.set("ok", ok.to_json())
+      ctx.json(resp.to_json())
+    }),
+  )
+  app.post(
+    "/api/pulls/:id/close",
+    @mars.handler(fn(ctx) {
+      guard require_write(api, ctx) is Some(_) else { return }
+      let pr_id = ctx.param("id").unwrap_or("")
+      let ok = api.close_pull_request(pr_id)
+      let resp : Map[String, Json] = {}
+      resp.set("ok", ok.to_json())
+      ctx.json(resp.to_json())
+    }),
+  )
   app.get(
     "*",
     @mars.handler(fn(ctx) {
@@ -326,6 +456,21 @@ pub fn create_app_with_storage(api : @core.ApiState) -> @mars.Server {
           end=route.length(),
         )
         let page = render_compare_page(api, spec)
+        return ctx.html(page.html, status=page.status)
+      }
+      if route == "/webhooks" {
+        return ctx.html(render_webhooks_page(api), status=200)
+      }
+      if route == "/pulls" {
+        return ctx.html(render_pulls_page(api), status=200)
+      }
+      if route.has_prefix("/pulls/") {
+        let id = String::unsafe_substring(
+          route,
+          start="/pulls/".length(),
+          end=route.length(),
+        )
+        let page = render_pull_detail_page(api, id)
         return ctx.html(page.html, status=page.status)
       }
       if route == "/actions/workflows" {
@@ -615,6 +760,8 @@ fn render_layout(
             @luna.text(" | "),
             @components.link("/issues", [@luna.text("issues")]),
             @luna.text(" | "),
+            @components.link("/pulls", [@luna.text("pulls")]),
+            @luna.text(" | "),
             @components.link("/activity", [@luna.text("activity")]),
             @luna.text(" | "),
             @components.link("/search?q=", [@luna.text("search")]),
@@ -815,6 +962,187 @@ fn find_char(s : String, target : Char) -> Int {
     idx += 1
   }
   -1
+}
+
+///|
+fn extract_json_string(json : Json, key : String) -> String {
+  match json {
+    Object(obj) =>
+      match obj.get(key) {
+        Some(String(s)) => s
+        _ => ""
+      }
+    _ => ""
+  }
+}
+
+///|
+fn render_webhooks_page(api : @core.ApiState) -> String {
+  let webhooks = api.list_webhooks()
+  let rows : Array[@luna.Node[Unit, String]] = []
+  for wh in webhooks {
+    rows.push(
+      @luna.h("tr", [], [
+        @luna.h("td", [], [@luna.text(wh.id)]),
+        @luna.h("td", [], [@luna.text(wh.event_type)]),
+        @luna.h("td", [], [@luna.text(wh.source)]),
+        @luna.h("td", [], [@luna.text(wh.triggered.to_string())]),
+        @luna.h("td", [], [@luna.text(format_timestamp(wh.timestamp))]),
+      ]),
+    )
+  }
+  if rows.length() == 0 {
+    rows.push(
+      @luna.h("tr", [], [
+        @luna.h("td", [("colspan", @luna.attr_static("5"))], [
+          @luna.text("No webhooks received"),
+        ]),
+      ]),
+    )
+  }
+  let table = @luna.h("table", [("class", @luna.attr_static("wf-table"))], [
+    @luna.h("thead", [], [
+      @luna.h("tr", [], [
+        @luna.h("th", [], [@luna.text("Event ID")]),
+        @luna.h("th", [], [@luna.text("Type")]),
+        @luna.h("th", [], [@luna.text("Source")]),
+        @luna.h("th", [], [@luna.text("Triggered")]),
+        @luna.h("th", [], [@luna.text("Time")]),
+      ]),
+    ]),
+    @luna.h("tbody", [], rows),
+  ])
+  render_layout("Webhooks", [
+    @luna.h("h1", [], [@luna.text("Webhook Log")]),
+    table,
+  ])
+}
+
+///|
+fn render_pulls_page(api : @core.ApiState) -> String {
+  let prs = api.list_pull_requests()
+  let rows : Array[@luna.Node[Unit, String]] = []
+  for pr in prs {
+    let state_icon = match pr.state {
+      "open" => "🟢"
+      "merged" => "🟣"
+      _ => "⚫"
+    }
+    rows.push(
+      @luna.h("tr", [], [
+        @luna.h("td", [], [
+          @components.link("/pulls/" + pr.id, [@luna.text("#" + pr.id)]),
+        ]),
+        @luna.h("td", [], [@luna.text(pr.title)]),
+        @luna.h("td", [], [
+          @luna.text(state_icon + " " + pr.state),
+        ]),
+        @luna.h("td", [], [
+          @luna.text(pr.base_ref + " ← " + pr.head_ref),
+        ]),
+        @luna.h("td", [], [@luna.text(pr.author)]),
+      ]),
+    )
+  }
+  if rows.length() == 0 {
+    rows.push(
+      @luna.h("tr", [], [
+        @luna.h("td", [("colspan", @luna.attr_static("5"))], [
+          @luna.text("No pull requests"),
+        ]),
+      ]),
+    )
+  }
+  let table = @luna.h("table", [("class", @luna.attr_static("wf-table"))], [
+    @luna.h("thead", [], [
+      @luna.h("tr", [], [
+        @luna.h("th", [], [@luna.text("ID")]),
+        @luna.h("th", [], [@luna.text("Title")]),
+        @luna.h("th", [], [@luna.text("State")]),
+        @luna.h("th", [], [@luna.text("Refs")]),
+        @luna.h("th", [], [@luna.text("Author")]),
+      ]),
+    ]),
+    @luna.h("tbody", [], rows),
+  ])
+  render_layout("Pull Requests", [
+    @luna.h("h1", [], [@luna.text("Pull Requests")]),
+    table,
+  ])
+}
+
+///|
+fn render_pull_detail_page(
+  api : @core.ApiState,
+  id : String,
+) -> PageHtml {
+  match api.get_pull_request(id) {
+    Some(detail) => {
+      let content : Array[@luna.Node[Unit, String]] = [
+        @luna.h("h1", [], [
+          @luna.text("PR #" + id + " " + detail.pr.title),
+        ]),
+        @luna.h("p", [], [
+          @luna.text(
+            "state: " +
+            detail.pr.state +
+            " | author: " +
+            detail.pr.author +
+            " | " +
+            detail.pr.base_ref +
+            " ← " +
+            detail.pr.head_ref,
+          ),
+        ]),
+      ]
+      if detail.body.length() > 0 {
+        content.push(
+          @components.region(
+            aria_label="PR description",
+            [@luna.raw_html(@markdown.md_to_html(detail.body))],
+          ),
+        )
+      }
+      match detail.compare {
+        Some(cmp) => {
+          content.push(
+            @luna.h("p", [], [
+              @luna.text(
+                cmp.commits.length().to_string() +
+                " commits, " +
+                cmp.all_files.length().to_string() +
+                " files changed",
+              ),
+            ]),
+          )
+          if cmp.all_files.length() > 0 {
+            content.push(
+              @luna.h("h2", [], [@luna.text("Files changed")]),
+            )
+            let file_nodes : Array[@luna.Node[Unit, String]] = []
+            for df in cmp.all_files {
+              file_nodes.push(
+                @luna.h("li", [], [
+                  @luna.h("strong", [], [@luna.text(df.path)]),
+                  @luna.text(" [" + df.kind + "]"),
+                ]),
+              )
+            }
+            content.push(@luna.h("ul", [], file_nodes))
+          }
+        }
+        None => ()
+      }
+      { status: 200, html: render_layout("PR #" + id, content) }
+    }
+    None => {
+      status: 404,
+      html: render_layout("Pull Request", [
+        @luna.h("h1", [], [@luna.text("PR #" + id)]),
+        @luna.h("p", [], [@luna.text("pull request not found")]),
+      ]),
+    }
+  }
 }
 
 ///|
