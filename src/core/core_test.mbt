@@ -303,6 +303,26 @@ test "MapStorage: list returns child keys at one level" {
 }
 
 ///|
+test "FsStorage: get/set/has/list round-trip" {
+  let rng = @random.Rand::new()
+  let dir = "/tmp/bithub-fs-test-" + rng.uint().to_string()
+  let s : &Storage = FsStorage::new(dir)
+  assert_true(s.get("foo") is None)
+  assert_true(not(s.has("foo")))
+  s.set_string("foo", "bar")
+  assert_true(s.has("foo"))
+  let bytes = s.get("foo").unwrap()
+  inspect(@utf8.decode_lossy(bytes), content="bar")
+  // nested keys
+  s.set_string("a/b/c", "nested")
+  assert_true(s.has("a/b/c"))
+  let children = s.list("a")
+  inspect(children, content="[\"b\"]")
+  let grandchildren = s.list("a/b")
+  inspect(grandchildren, content="[\"c\"]")
+}
+
+///|
 test "ApiState works with MapStorage backend" {
   let s : &Storage = MapStorage::new()
   s.set_string("README.md", "# test")
