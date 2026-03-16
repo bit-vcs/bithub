@@ -131,6 +131,37 @@ pub fn ApiState::with_storage(store : &Storage) -> ApiState {
 }
 
 ///|
+/// Create ApiState populated from a real git repository on disk.
+/// Reads commits, branches, and files from the repo at `root`.
+pub fn ApiState::from_repo(
+  root : String,
+  files : Array[String],
+) -> ApiState {
+  let store : &Storage = MapStorage::new()
+  let git_dir = root + "/.git"
+  // Load README
+  match read_file_string(root + "/README.md") {
+    Some(content) => store.set_string("README.md", content)
+    None => ()
+  }
+  // Load files into storage
+  load_files_into_storage(store, root, files)
+  // Load workflow files
+  match read_file_string(root + "/.github/workflows/ci.yml") {
+    Some(content) => store.set_string(".github/workflows/ci.yml", content)
+    None => ()
+  }
+  // Load git data
+  let os_fs = @bit.TestFs::new()
+  // Try to use real filesystem for git operations
+  load_git_commits_into_storage(store, os_fs, git_dir)
+  load_git_branches_into_storage(store, os_fs, git_dir)
+  // Add default auth token
+  store.set_string("auth/tokens/tok-owner-001", "identity=admin\nrole=owner")
+  { store, }
+}
+
+///|
 pub fn ApiState::readme_markdown(self : ApiState) -> String {
   self.file_text("README.md").unwrap_or("# README.md\n\nnot found")
 }
@@ -961,6 +992,68 @@ pub fn ApiState::get_issue(self : ApiState, id : String) -> IssueDetail? {
     }
     None => None
   }
+}
+
+///|
+pub fn ApiState::create_issue(
+  self : ApiState,
+  title : String,
+  body : String,
+  author : String,
+  timestamp : String,
+) -> String {
+  // Generate next issue ID by counting existing issues
+  let existing = self.store.list("issues")
+  let mut max_id = 0
+  for id_str in existing {
+    let mut n = 0
+    for c in id_str {
+      if c >= '0' && c <= '9' {
+        n = n * 10 + (c.to_int() - '0'.to_int())
+      }
+    }
+    if n > max_id {
+      max_id = n
+    }
+  }
+  let new_id = (max_id + 1).to_string()
+  let meta = [
+    "title=" + title,
+    "state=open",
+    "author=" + author,
+    "created_at=" + timestamp,
+  ].join("\n")
+  self.store.set_string("issues/" + new_id + "/meta", meta)
+  if body.length() > 0 {
+    self.store.set_string("issues/" + new_id + "/body", body)
+  }
+  new_id
+}
+
+///|
+pub fn ApiState::add_comment(
+  self : ApiState,
+  issue_id : String,
+  author : String,
+  body : String,
+  timestamp : String,
+) -> Bool {
+  // Verify issue exists
+  if self.store.get("issues/" + issue_id + "/meta") is None {
+    return false
+  }
+  let existing = self.store.list("issues/" + issue_id + "/comments")
+  let next_id = existing.length().to_string()
+  let comment = [
+    "author=" + author,
+    "body=" + body,
+    "created_at=" + timestamp,
+  ].join("\n")
+  self.store.set_string(
+    "issues/" + issue_id + "/comments/" + next_id,
+    comment,
+  )
+  true
 }
 
 // ---- Activity Feed ----

@@ -534,6 +534,83 @@ test.describe('auth header format', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Issue creation API
+// ---------------------------------------------------------------------------
+test.describe('issue creation API', () => {
+  test('create issue with write token', async ({ request, page }) => {
+    const res = await request.post('/api/issues', {
+      data: { title: 'E2E test issue', body: 'Created by E2E test', author: 'e2e-bot' },
+      headers: authHeaders,
+    });
+    expect(res.status()).toBe(200);
+    const body = await res.json();
+    expect(body.id).toBeDefined();
+
+    // Verify it appears on the issues page
+    await page.goto('/issues');
+    await expect(page.getByText('E2E test issue')).toBeVisible();
+
+    // Verify detail page works
+    await page.goto(`/issues/${body.id}`);
+    await expect(page.getByText('Created by E2E test')).toBeVisible();
+  });
+
+  test('create issue rejects without token', async ({ request }) => {
+    const res = await request.post('/api/issues', {
+      data: { title: 'No auth' },
+    });
+    expect(res.status()).toBe(401);
+  });
+
+  test('create issue rejects read-only token', async ({ request }) => {
+    const res = await request.post('/api/issues', {
+      data: { title: 'Read only' },
+      headers: { Authorization: `Bearer ${READ_TOKEN}` },
+    });
+    expect(res.status()).toBe(403);
+  });
+
+  test('create issue rejects missing title', async ({ request }) => {
+    const res = await request.post('/api/issues', {
+      data: { body: 'no title' },
+      headers: authHeaders,
+    });
+    expect(res.status()).toBe(400);
+  });
+
+  test('add comment to issue', async ({ request, page }) => {
+    // Create issue first
+    const createRes = await request.post('/api/issues', {
+      data: { title: 'Comment test issue' },
+      headers: authHeaders,
+    });
+    const issueId = (await createRes.json()).id;
+
+    // Add comment
+    const commentRes = await request.post(`/api/issues/${issueId}/comments`, {
+      data: { body: 'Test comment body', author: 'commenter' },
+      headers: authHeaders,
+    });
+    expect(commentRes.status()).toBe(200);
+    expect((await commentRes.json()).ok).toBe(true);
+
+    // Verify comment appears
+    await page.goto(`/issues/${issueId}`);
+    await expect(page.getByText('Test comment body')).toBeVisible();
+    await expect(page.getByText('commenter')).toBeVisible();
+  });
+
+  test('add comment to nonexistent issue fails', async ({ request }) => {
+    const res = await request.post('/api/issues/99999/comments', {
+      data: { body: 'orphan comment' },
+      headers: authHeaders,
+    });
+    expect(res.status()).toBe(200);
+    expect((await res.json()).ok).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Workflow pages
 // ---------------------------------------------------------------------------
 test.describe('workflow pages', () => {

@@ -1,4 +1,21 @@
 ///|
+fn get_spawn_config(ctx : @mars.Context) -> @core.CiSpawnConfig? {
+  let url = ctx.env_var("CI_ORCHESTRATOR_URL").unwrap_or("")
+  if url.length() == 0 {
+    return None
+  }
+  Some({
+    orchestrator_url: url,
+    auth_token: ctx.env_var("CI_ORCHESTRATOR_TOKEN").unwrap_or(""),
+    bithub_url: ctx.env_var("BITHUB_PUBLIC_URL").unwrap_or(""),
+    bithub_token: ctx.env_var("CI_BITHUB_TOKEN").unwrap_or("tok-write-001"),
+    container_image: ctx.env_var("CI_CONTAINER_IMAGE").unwrap_or(
+      "bithub-ci-runner:latest",
+    ),
+  })
+}
+
+///|
 fn require_write(
   api : @core.ApiState,
   ctx : @mars.Context,
@@ -41,6 +58,18 @@ pub fn create_app() -> @mars.Server {
       match json_opt {
         Some(json) => {
           let runs = api.process_relay_webhook(json)
+          // Auto-spawn CI containers if orchestrator is configured
+          let spawn_config = get_spawn_config(ctx)
+          match spawn_config {
+            Some(config) =>
+              for run in runs {
+                let requests = api.build_spawn_requests(run.id)
+                for req in requests {
+                  @core.fire_spawn_request(config, req) |> ignore
+                }
+              }
+            None => ()
+          }
           let resp : Map[String, Json] = {}
           resp.set("triggered", runs.length().to_json())
           ctx.json(resp.to_json())
@@ -106,6 +135,99 @@ pub fn create_app() -> @mars.Server {
           )
           let resp : Map[String, Json] = {}
           resp.set("ok", ok.to_json())
+          ctx.json(resp.to_json())
+        }
+        None => {
+          let e : Map[String, Json] = {}
+          e.set("error", "invalid json".to_json())
+          ctx.json(e.to_json(), status=400)
+        }
+      }
+    }),
+  )
+  app.post(
+    "/api/issues",
+    @mars.handler(fn(ctx) {
+      guard require_write(api, ctx) is Some(token_info) else { return }
+      match ctx.body_json() {
+        Some(json) => {
+          guard json is Object(obj) else {
+            let e : Map[String, Json] = {}
+            e.set("error", "invalid payload".to_json())
+            return ctx.json(e.to_json(), status=400)
+          }
+          let title = match obj.get("title") {
+            Some(String(s)) => s
+            _ => {
+              let e : Map[String, Json] = {}
+              e.set("error", "missing title".to_json())
+              return ctx.json(e.to_json(), status=400)
+            }
+          }
+          let body = match obj.get("body") {
+            Some(String(s)) => s
+            _ => ""
+          }
+          let author = match obj.get("author") {
+            Some(String(s)) => s
+            _ => token_info.identity
+          }
+          let timestamp = match obj.get("timestamp") {
+            Some(String(s)) => s
+            _ => ""
+          }
+          let id = api.create_issue(title, body, author, timestamp)
+          let resp : Map[String, Json] = {}
+          resp.set("id", id.to_json())
+          ctx.json(resp.to_json())
+        }
+        None => {
+          let e : Map[String, Json] = {}
+          e.set("error", "invalid json".to_json())
+          ctx.json(e.to_json(), status=400)
+        }
+      }
+    }),
+  )
+  app.post(
+    "/api/issues/:id/comments",
+    @mars.handler(fn(ctx) {
+      guard require_write(api, ctx) is Some(token_info) else { return }
+      let issue_id = ctx.param("id").unwrap_or("")
+      if issue_id.length() == 0 {
+        let e : Map[String, Json] = {}
+        e.set("error", "missing issue id".to_json())
+        return ctx.json(e.to_json(), status=400)
+      }
+      match ctx.body_json() {
+        Some(json) => {
+          guard json is Object(obj) else {
+            let e : Map[String, Json] = {}
+            e.set("error", "invalid payload".to_json())
+            return ctx.json(e.to_json(), status=400)
+          }
+          let body = match obj.get("body") {
+            Some(String(s)) => s
+            _ => {
+              let e : Map[String, Json] = {}
+              e.set("error", "missing body".to_json())
+              return ctx.json(e.to_json(), status=400)
+            }
+          }
+          let author = match obj.get("author") {
+            Some(String(s)) => s
+            _ => token_info.identity
+          }
+          let timestamp = match obj.get("timestamp") {
+            Some(String(s)) => s
+            _ => ""
+          }
+          let ok = api.add_comment(issue_id, author, body, timestamp)
+          let resp : Map[String, Json] = {}
+          resp.set("ok", ok.to_json())
+          if not(ok) {
+            resp.set("error", "issue not found".to_json())
+          }
           ctx.json(resp.to_json())
         }
         None => {

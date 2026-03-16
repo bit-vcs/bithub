@@ -49,6 +49,16 @@ pub fn mars_route_specs() -> Array[RouteSpec] {
       path: "/branches",
     },
     {
+      id: "issues_create",
+      http_method: "POST",
+      path: "/api/issues",
+    },
+    {
+      id: "issues_comment",
+      http_method: "POST",
+      path: "/api/issues/:id/comments",
+    },
+    {
       id: "webhook_relay",
       http_method: "POST",
       path: "/api/webhook/relay",
