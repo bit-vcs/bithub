@@ -1,5 +1,9 @@
 import { test, expect, type APIRequestContext } from '@playwright/test';
 
+const WRITE_TOKEN = 'tok-write-001';
+const READ_TOKEN = 'tok-read-001';
+const authHeaders = { Authorization: `Bearer ${WRITE_TOKEN}` };
+
 function makeWebhookPayload(eventId: string, ref: string) {
   return {
     event_type: 'relay.incoming_ref',
@@ -44,9 +48,14 @@ function parseJobs(html: string): { id: string; stepCount: number }[] {
   });
 }
 
-async function triggerRun(request: APIRequestContext, eventId: string) {
+async function triggerRun(
+  request: APIRequestContext,
+  eventId: string,
+  headers: Record<string, string> = authHeaders,
+) {
   const res = await request.post('/api/webhook/relay', {
     data: makeWebhookPayload(eventId, 'refs/relay/incoming/main'),
+    headers,
   });
   expect(res.status()).toBe(200);
   return res.json();
@@ -61,6 +70,7 @@ async function updateStep(
 ) {
   const res = await request.post('/api/actions/runs/status', {
     data: makeStatusPayload(runId, jobId, step, status),
+    headers: authHeaders,
   });
   expect(res.status()).toBe(200);
   return res.json();
@@ -260,6 +270,7 @@ test.describe('webhook validation', () => {
         ...makeWebhookPayload('evt-unk', 'refs/relay/incoming/main'),
         event_type: 'unknown.event',
       },
+      headers: authHeaders,
     });
     expect(res.status()).toBe(200);
     expect((await res.json()).triggered).toBe(0);
@@ -268,7 +279,7 @@ test.describe('webhook validation', () => {
   test('rejects invalid JSON body', async ({ request }) => {
     const res = await request.post('/api/webhook/relay', {
       data: 'not json',
-      headers: { 'Content-Type': 'text/plain' },
+      headers: { 'Content-Type': 'text/plain', ...authHeaders },
     });
     expect(res.status()).toBe(400);
     const body = await res.json();
@@ -278,9 +289,9 @@ test.describe('webhook validation', () => {
   test('rejects malformed ref format', async ({ request }) => {
     const res = await request.post('/api/webhook/relay', {
       data: makeWebhookPayload('evt-badref', 'not/a/valid/ref'),
+      headers: authHeaders,
     });
     expect(res.status()).toBe(200);
-    // malformed ref → no branch extracted → no trigger match
     expect((await res.json()).triggered).toBe(0);
   });
 });
@@ -292,6 +303,7 @@ test.describe('status update validation', () => {
   test('rejects missing run_id', async ({ request }) => {
     const res = await request.post('/api/actions/runs/status', {
       data: { job_id: 'x', step_index: 0, status: 'success' },
+      headers: authHeaders,
     });
     expect(res.status()).toBe(400);
   });
@@ -299,6 +311,7 @@ test.describe('status update validation', () => {
   test('rejects missing job_id', async ({ request }) => {
     const res = await request.post('/api/actions/runs/status', {
       data: { run_id: 'x', step_index: 0, status: 'success' },
+      headers: authHeaders,
     });
     expect(res.status()).toBe(400);
   });
@@ -306,6 +319,7 @@ test.describe('status update validation', () => {
   test('rejects missing status', async ({ request }) => {
     const res = await request.post('/api/actions/runs/status', {
       data: { run_id: 'x', job_id: 'y', step_index: 0 },
+      headers: authHeaders,
     });
     expect(res.status()).toBe(400);
   });
@@ -313,9 +327,62 @@ test.describe('status update validation', () => {
   test('returns ok:false for nonexistent run', async ({ request }) => {
     const res = await request.post('/api/actions/runs/status', {
       data: makeStatusPayload('nonexistent', 'nojob', 0, 'success'),
+      headers: authHeaders,
     });
     expect(res.status()).toBe(200);
     expect((await res.json()).ok).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Permission enforcement
+// ---------------------------------------------------------------------------
+test.describe('permission enforcement', () => {
+  test('webhook rejects request without token', async ({ request }) => {
+    const res = await request.post('/api/webhook/relay', {
+      data: makeWebhookPayload('evt-noauth', 'refs/relay/incoming/main'),
+    });
+    expect(res.status()).toBe(401);
+  });
+
+  test('webhook rejects invalid token', async ({ request }) => {
+    const res = await request.post('/api/webhook/relay', {
+      data: makeWebhookPayload('evt-badtoken', 'refs/relay/incoming/main'),
+      headers: { Authorization: 'Bearer invalid-token-xyz' },
+    });
+    expect(res.status()).toBe(401);
+  });
+
+  test('webhook rejects read-only token', async ({ request }) => {
+    const res = await request.post('/api/webhook/relay', {
+      data: makeWebhookPayload('evt-readonly', 'refs/relay/incoming/main'),
+      headers: { Authorization: `Bearer ${READ_TOKEN}` },
+    });
+    expect(res.status()).toBe(403);
+  });
+
+  test('status update rejects request without token', async ({ request }) => {
+    const res = await request.post('/api/actions/runs/status', {
+      data: makeStatusPayload('x', 'y', 0, 'success'),
+    });
+    expect(res.status()).toBe(401);
+  });
+
+  test('status update rejects read-only token', async ({ request }) => {
+    const res = await request.post('/api/actions/runs/status', {
+      data: makeStatusPayload('x', 'y', 0, 'success'),
+      headers: { Authorization: `Bearer ${READ_TOKEN}` },
+    });
+    expect(res.status()).toBe(403);
+  });
+
+  test('read endpoints remain accessible without token', async ({ page }) => {
+    const commits = await page.goto('/commits');
+    expect(commits!.status()).toBe(200);
+    const branches = await page.goto('/branches');
+    expect(branches!.status()).toBe(200);
+    const actions = await page.goto('/actions');
+    expect(actions!.status()).toBe(200);
   });
 });
 

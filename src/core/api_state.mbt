@@ -303,6 +303,10 @@ fn seed_files(kv : @kv.Kv) -> Unit {
     #|- keep adapter replaceable
     #|- cloudflare js target first
   kv.set_string("docs/notes.txt", notes)
+  // Seed: auth tokens
+  kv.set_string("auth/tokens/tok-owner-001", "identity=mizchi\nrole=owner")
+  kv.set_string("auth/tokens/tok-write-001", "identity=ci-bot\nrole=write")
+  kv.set_string("auth/tokens/tok-read-001", "identity=viewer\nrole=read")
   // Seed: branches
   kv.set_string(
     "git/branches/main",
@@ -342,6 +346,134 @@ fn seed_files(kv : @kv.Kv) -> Unit {
     "git/diffs/bbb2345/0",
     "path=src/cmd/bithub/viewer.mbt\nkind=modified\npatch=-layout.style.setProperty('--sidebar-size', `${current}px`);\n+layout.style.setProperty('--sidebar-size', current + 'px');",
   )
+}
+
+// ---- Permissions ----
+
+///|
+pub enum Role {
+  Owner
+  Write
+  Read
+} derive(Eq)
+
+///|
+pub fn Role::to_string(self : Role) -> String {
+  match self {
+    Owner => "owner"
+    Write => "write"
+    Read => "read"
+  }
+}
+
+///|
+pub fn Role::can_write(self : Role) -> Bool {
+  match self {
+    Owner | Write => true
+    Read => false
+  }
+}
+
+///|
+pub fn Role::can_admin(self : Role) -> Bool {
+  self is Owner
+}
+
+///|
+pub struct TokenInfo {
+  identity : String
+  role : Role
+}
+
+///|
+pub fn ApiState::resolve_token(self : ApiState, token : String) -> TokenInfo? {
+  if token.length() == 0 {
+    return None
+  }
+  match self.kv.get("auth/tokens/" + token) {
+    Some(bytes) => {
+      let text = @utf8.decode_lossy(bytes)
+      let fields = parse_kv_fields(text)
+      let identity = fields.get("identity").unwrap_or("")
+      let role_str = fields.get("role").unwrap_or("read")
+      let role = match role_str {
+        "owner" => Owner
+        "write" => Write
+        _ => Read
+      }
+      if identity.length() > 0 {
+        Some({ identity, role })
+      } else {
+        None
+      }
+    }
+    None => None
+  }
+}
+
+///|
+pub fn ApiState::list_tokens(self : ApiState) -> Array[TokenInfo] {
+  let names = self.kv.list("auth/tokens")
+  let entries : Array[TokenInfo] = []
+  for name in names {
+    match self.kv.get("auth/tokens/" + name) {
+      Some(bytes) => {
+        let text = @utf8.decode_lossy(bytes)
+        let fields = parse_kv_fields(text)
+        let identity = fields.get("identity").unwrap_or("")
+        let role_str = fields.get("role").unwrap_or("read")
+        let role : Role = match role_str {
+          "owner" => Owner
+          "write" => Write
+          _ => Read
+        }
+        if identity.length() > 0 {
+          entries.push({ identity, role })
+        }
+      }
+      None => ()
+    }
+  }
+  entries
+}
+
+///|
+pub enum AuthResult {
+  Authenticated(TokenInfo)
+  Anonymous
+  InvalidToken
+}
+
+///|
+pub fn ApiState::authenticate(
+  self : ApiState,
+  auth_header : String?,
+) -> AuthResult {
+  match auth_header {
+    None => Anonymous
+    Some(header) => {
+      let token = extract_bearer_token(header)
+      match token {
+        None => InvalidToken
+        Some(t) =>
+          match self.resolve_token(t) {
+            Some(info) => Authenticated(info)
+            None => InvalidToken
+          }
+      }
+    }
+  }
+}
+
+///|
+fn extract_bearer_token(header : String) -> String? {
+  if header.has_prefix("Bearer ") {
+    Some(String::unsafe_substring(header, start=7, end=header.length()))
+  } else if header.has_prefix("bearer ") {
+    Some(String::unsafe_substring(header, start=7, end=header.length()))
+  } else {
+    None
+  }
 }
 
 // ---- Commits ----

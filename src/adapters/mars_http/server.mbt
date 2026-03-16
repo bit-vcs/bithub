@@ -1,10 +1,42 @@
 ///|
+fn require_write(
+  api : @core.ApiState,
+  ctx : @mars.Context,
+) -> @core.TokenInfo? {
+  let auth = api.authenticate(ctx.header("Authorization"))
+  match auth {
+    Authenticated(info) =>
+      if info.role.can_write() {
+        Some(info)
+      } else {
+        let e : Map[String, Json] = {}
+        e.set("error", "forbidden: write permission required".to_json())
+        ctx.json(e.to_json(), status=403)
+        None
+      }
+    InvalidToken => {
+      let e : Map[String, Json] = {}
+      e.set("error", "unauthorized: invalid token".to_json())
+      ctx.json(e.to_json(), status=401)
+      None
+    }
+    Anonymous => {
+      let e : Map[String, Json] = {}
+      e.set("error", "unauthorized: Bearer token required".to_json())
+      ctx.json(e.to_json(), status=401)
+      None
+    }
+  }
+}
+
+///|
 pub fn create_app() -> @mars.Server {
   let app = @mars.Server::new()
   let api = @core.ApiState::new()
   app.post(
     "/api/webhook/relay",
     @mars.handler(fn(ctx) {
+      guard require_write(api, ctx) is Some(_) else { return }
       let json_opt = ctx.body_json()
       match json_opt {
         Some(json) => {
@@ -24,6 +56,7 @@ pub fn create_app() -> @mars.Server {
   app.post(
     "/api/actions/runs/status",
     @mars.handler(fn(ctx) {
+      guard require_write(api, ctx) is Some(_) else { return }
       let json_opt = ctx.body_json()
       match json_opt {
         Some(json) => {
