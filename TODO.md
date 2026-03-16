@@ -12,10 +12,11 @@ Last updated: 2026-03-16
 
 ### Short-term (infra wiring)
 
-- [ ] Wire R2 binding: add R2 bucket to wrangler.toml, inject `__r2_env` in worker-entry.js, connect R2Storage to real R2 API (not just cache layer)
-- [ ] Wire `from_repo` with real filesystem: use bitlib `log_head` / `list_branches` on actual JsOsFs instead of TestFs
-- [ ] Deploy CI container to Cloudflare Containers: `wrangler containers` image push + Worker spawn integration
-- [ ] Auto-fill timestamps: use `Date.now()` in API endpoints when timestamp field is empty
+- [x] Wire R2 binding (done 2026-03-16)
+- [x] Wire `from_repo` with real filesystem (done 2026-03-16)
+- [x] Deploy CI container to Cloudflare Containers (done 2026-03-16)
+- [x] Auto-fill timestamps (done 2026-03-16)
+- [ ] Enable Container orchestration: uncomment wrangler.toml containers config, implement spawn API endpoint
 
 ### Mid-term (features)
 

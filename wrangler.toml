@@ -10,8 +10,8 @@ binding = "BITHUB_STORE"
 bucket_name = "bithub-store"
 
 # Cloudflare Containers for CI job execution
+# Enable when orchestrator API is ready:
 # [[containers.apps]]
 # name = "ci-runner"
-# image = "./containers/ci-runner"
+# image = "registry.cloudflare.com/f90b16619da21adbec058f5c09b1de53/bithub-ci-runner:latest"
 # max_instances = 3
-# instance_type = "basic"
