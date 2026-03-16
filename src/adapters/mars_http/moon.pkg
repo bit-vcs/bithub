@@ -6,3 +6,7 @@ import {
   "mizchi/sol" @sol,
   "bit-vcs/bithub/core" @core,
 }
+
+options(
+  "supported-targets": "js",
+)

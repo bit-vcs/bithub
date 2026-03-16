@@ -1634,16 +1634,16 @@ priv struct ActionManifestSpec {
   inputs : Map[String, String]
   runtime : String
   steps : Array[StepSpec]
-  main : String
-  pre : String?
-  post : String?
-  pre_if : String
-  post_if : String
-  image : String
-  args : Array[String]
-  entrypoint : String?
-  pre_entrypoint : String?
-  post_entrypoint : String?
+  _main : String
+  _pre : String?
+  _post : String?
+  _pre_if : String
+  _post_if : String
+  _image : String
+  _args : Array[String]
+  _entrypoint : String?
+  _pre_entrypoint : String?
+  _post_entrypoint : String?
 }
 
 ///|
@@ -1768,16 +1768,16 @@ fn parse_action_manifest_yaml(text : String) -> ActionManifestParseResult {
         inputs,
         runtime: action_using,
         steps,
-        main,
-        pre,
-        post,
-        pre_if,
-        post_if,
-        image,
-        args,
-        entrypoint,
-        pre_entrypoint,
-        post_entrypoint,
+        _main: main,
+        _pre: pre,
+        _post: post,
+        _pre_if: pre_if,
+        _post_if: post_if,
+        _image: image,
+        _args: args,
+        _entrypoint: entrypoint,
+        _pre_entrypoint: pre_entrypoint,
+        _post_entrypoint: post_entrypoint,
       }),
       errors,
     }

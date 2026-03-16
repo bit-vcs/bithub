@@ -6,6 +6,7 @@ import {
 }
 
 options(
+  "supported-targets": "js",
   is_main: true,
   link: { "js": { "format": "cjs" } },
   targets: { "main.mbt": [ "js" ] },

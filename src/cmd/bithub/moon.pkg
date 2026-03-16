@@ -23,6 +23,7 @@ import {
 } for "test"
 
 options(
+  "supported-targets": "js",
   is_main: true,
   link: { "js": { "format": "cjs" } },
   targets: {
