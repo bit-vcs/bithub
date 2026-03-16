@@ -6,6 +6,8 @@ import {
 }
 
 // Values
+pub fn extract_branch_from_relay_ref(String) -> String?
+
 pub fn healthz_text() -> String
 
 pub fn home_text() -> String
@@ -16,13 +18,96 @@ pub fn mars_route_specs() -> Array[RouteSpec]
 
 // Types and methods
 pub struct ApiState {
-  kv : @kv.Kv
+  store : &Storage
 }
+pub fn ApiState::authenticate(Self, String?) -> AuthResult
 pub fn ApiState::file_text(Self, String) -> String?
+pub fn ApiState::get_ci_run(Self, String) -> CiRun?
+pub fn ApiState::get_ci_run_detail(Self, String) -> CiRunDetail?
+pub fn ApiState::get_commit(Self, String) -> CommitDetail?
+pub fn ApiState::list_branches(Self) -> Array[BranchEntry]
+pub fn ApiState::list_ci_runs(Self) -> Array[CiRun]
+pub fn ApiState::list_commits(Self) -> Array[CommitEntry]
 pub fn ApiState::list_entries(Self, String) -> Array[FileEntry]
+pub fn ApiState::list_tokens(Self) -> Array[TokenInfo]
+pub fn ApiState::list_workflows(Self) -> Array[WorkflowEntry]
 pub fn ApiState::lookup_file(Self, String) -> FileLookup
 pub fn ApiState::new() -> Self
+pub fn ApiState::process_relay_webhook(Self, Json) -> Array[CiRun]
 pub fn ApiState::readme_markdown(Self) -> String
+pub fn ApiState::resolve_token(Self, String) -> TokenInfo?
+pub fn ApiState::update_step_status(Self, String, String, Int, String, String) -> Bool
+pub fn ApiState::with_storage(&Storage) -> Self
+pub fn ApiState::workflow_detail(Self, String) -> WorkflowDetail?
+
+pub enum AuthResult {
+  Authenticated(TokenInfo)
+  Anonymous
+  InvalidToken
+}
+
+pub struct BranchEntry {
+  name : String
+  sha : String
+  current : Bool
+}
+
+pub struct CiJobRun {
+  job_id : String
+  name : String
+  status : String
+  started_at : String
+  finished_at : String
+}
+
+pub struct CiJobRunDetail {
+  job : CiJobRun
+  steps : Array[CiStepRun]
+}
+
+pub struct CiRun {
+  id : String
+  workflow_file : String
+  workflow_name : String
+  ref_name : String
+  status : String
+  triggered_at : String
+  source : String
+}
+
+pub struct CiRunDetail {
+  run : CiRun
+  jobs : Array[CiJobRunDetail]
+}
+
+pub struct CiStepRun {
+  index : Int
+  name : String
+  status : String
+  started_at : String
+  finished_at : String
+  uses : String
+  run_cmd : String
+}
+
+pub struct CommitDetail {
+  commit : CommitEntry
+  parent_sha : String
+  diff_files : Array[DiffFileEntry]
+}
+
+pub struct CommitEntry {
+  sha : String
+  message : String
+  author : String
+  timestamp : String
+}
+
+pub struct DiffFileEntry {
+  path : String
+  kind : String
+  patch : String
+}
 
 pub struct FileEntry {
   name : String
@@ -36,13 +121,73 @@ pub struct FileLookup {
   content : String?
 }
 
+pub struct MapStorage {
+  data : Map[String, String]
+}
+pub fn MapStorage::new() -> Self
+
+pub struct MemoryStorage {
+  kv : @kv.Kv
+}
+pub fn MemoryStorage::new_seeded() -> Self
+
+pub enum Role {
+  Owner
+  Write
+  Read
+}
+pub fn Role::can_admin(Self) -> Bool
+pub fn Role::can_write(Self) -> Bool
+pub fn Role::to_string(Self) -> String
+pub impl Eq for Role
+
 pub struct RouteSpec {
   id : String
   http_method : String
   path : String
 }
 
+pub struct TokenInfo {
+  identity : String
+  role : Role
+}
+
+pub struct WorkflowDetail {
+  filename : String
+  name : String
+  triggers : Array[String]
+  jobs : Array[WorkflowJobSummary]
+}
+
+pub struct WorkflowEntry {
+  filename : String
+  name : String
+  job_count : Int
+  triggers : Array[String]
+}
+
+pub struct WorkflowJobSummary {
+  id : String
+  name : String
+  runs_on : Array[String]
+  step_count : Int
+  steps : Array[WorkflowStepSummary]
+}
+
+pub struct WorkflowStepSummary {
+  id : String
+  name : String
+  uses : String?
+  run_preview : String?
+}
+
 // Type aliases
 
 // Traits
+pub(open) trait Storage {
+  get(Self, String) -> Bytes?
+  set_string(Self, String, String) -> Unit
+  list(Self, String) -> Array[String]
+  has(Self, String) -> Bool
+}
 

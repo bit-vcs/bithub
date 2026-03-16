@@ -1,0 +1,192 @@
+// Generated using `moon info`, DON'T EDIT IT
+package "bit-vcs/bithub/actrun"
+
+// Values
+pub fn matches_push_trigger(PushTrigger, PushEvent) -> Bool
+
+pub fn new_concurrency_spec(String, cancel_in_progress? : String?) -> ConcurrencySpec
+
+pub fn new_job(String, Array[StepSpec], name? : String, if_condition? : String, needs? : Array[String], outputs? : Map[String, String], permissions? : PermissionsSpec?, concurrency? : ConcurrencySpec?, runs_on? : Array[String], env? : Map[String, String], defaults? : RunDefaults, matrix? : JobMatrixSpec?, reusable_workflow? : String?, reusable_workflow_with? : Map[String, String], reusable_workflow_secrets? : Map[String, String], reusable_workflow_inherit_secrets? : Bool, container? : JobContainerSpec?, container_image? : String?, services? : Map[String, JobContainerSpec], timeout_minutes? : Int, environment? : String) -> JobSpec
+
+pub fn new_job_container_credentials_spec(String, String) -> JobContainerCredentialsSpec
+
+pub fn new_job_container_spec(String, credentials? : JobContainerCredentialsSpec?, env? : Map[String, String], ports? : Array[String], volumes? : Array[String], options? : String?) -> JobContainerSpec
+
+pub fn new_job_matrix(Array[Map[String, String]], fail_fast? : Bool, max_parallel? : Int?) -> JobMatrixSpec
+
+pub fn new_local_action(Array[StepSpec], name? : String, inputs? : Map[String, String]) -> LocalActionSpec
+
+pub fn new_permissions_spec(values? : Map[String, String]) -> PermissionsSpec
+
+pub fn new_push_event(String, Array[String], before_sha? : String, after_sha? : String, repository? : String, actor? : String) -> PushEvent
+
+pub fn new_push_trigger(branches? : Array[String], branches_ignore? : Array[String], paths? : Array[String], paths_ignore? : Array[String], tags? : Array[String], tags_ignore? : Array[String]) -> PushTrigger
+
+pub fn new_run_defaults(shell? : String?, working_directory? : String?) -> RunDefaults
+
+pub fn new_run_step(String, String, name? : String, shell? : String?, working_directory? : String?, env? : Map[String, String], if_condition? : String, with_values? : Map[String, String], continue_on_error? : String, timeout_minutes? : Int) -> StepSpec
+
+pub fn new_uses_step(String, String, name? : String, env? : Map[String, String], if_condition? : String, with_values? : Map[String, String], continue_on_error? : String, timeout_minutes? : Int) -> StepSpec
+
+pub fn new_workflow(String, Array[JobSpec], run_name? : String, trigger? : PushTrigger, workflow_call? : Bool, workflow_call_spec? : WorkflowCallSpec?, permissions? : PermissionsSpec?, concurrency? : ConcurrencySpec?, env? : Map[String, String], defaults? : RunDefaults) -> WorkflowSpec
+
+pub fn new_workflow_call_input_spec(description? : String, required? : Bool, default_value? : String?, input_type? : String) -> WorkflowCallInputSpec
+
+pub fn new_workflow_call_output_spec(description? : String, value? : String) -> WorkflowCallOutputSpec
+
+pub fn new_workflow_call_secret_spec(required? : Bool) -> WorkflowCallSecretSpec
+
+pub fn new_workflow_call_spec(inputs? : Map[String, WorkflowCallInputSpec], outputs? : Map[String, WorkflowCallOutputSpec], secrets? : Map[String, WorkflowCallSecretSpec]) -> WorkflowCallSpec
+
+pub fn parse_local_action_yaml(String) -> LocalActionParseResult
+
+pub fn parse_workflow_yaml(String) -> WorkflowParseResult
+
+// Errors
+
+// Types and methods
+pub struct ConcurrencySpec {
+  group : String
+  cancel_in_progress : String?
+}
+
+pub struct JobContainerCredentialsSpec {
+  username : String
+  password : String
+}
+
+pub struct JobContainerSpec {
+  image : String
+  credentials : JobContainerCredentialsSpec?
+  env : Map[String, String]
+  ports : Array[String]
+  volumes : Array[String]
+  options : String?
+}
+
+pub struct JobMatrixSpec {
+  rows : Array[Map[String, String]]
+  fail_fast : Bool
+  max_parallel : Int?
+}
+
+pub struct JobSpec {
+  id : String
+  name : String
+  if_condition : String
+  needs : Array[String]
+  outputs : Map[String, String]
+  permissions : PermissionsSpec?
+  concurrency : ConcurrencySpec?
+  runs_on : Array[String]
+  env : Map[String, String]
+  defaults : RunDefaults
+  steps : Array[StepSpec]
+  matrix : JobMatrixSpec?
+  reusable_workflow : String?
+  reusable_workflow_with : Map[String, String]
+  reusable_workflow_secrets : Map[String, String]
+  reusable_workflow_inherit_secrets : Bool
+  services : Map[String, JobContainerSpec]
+  container : JobContainerSpec?
+  container_image : String?
+  timeout_minutes : Int
+  environment : String
+}
+
+pub struct LocalActionParseResult {
+  action : LocalActionSpec?
+  errors : Array[String]
+}
+
+pub struct LocalActionSpec {
+  name : String
+  inputs : Map[String, String]
+  steps : Array[StepSpec]
+}
+
+pub struct PermissionsSpec {
+  values : Map[String, String]
+}
+
+pub struct PushEvent {
+  ref_name : String
+  before_sha : String
+  after_sha : String
+  changed_paths : Array[String]
+  repository : String
+  actor : String
+}
+
+pub struct PushTrigger {
+  branches : Array[String]
+  branches_ignore : Array[String]
+  paths : Array[String]
+  paths_ignore : Array[String]
+  tags : Array[String]
+  tags_ignore : Array[String]
+}
+
+pub struct RunDefaults {
+  shell : String?
+  working_directory : String?
+}
+
+pub struct StepSpec {
+  id : String
+  name : String
+  run : String?
+  uses : String?
+  shell : String?
+  working_directory : String?
+  env : Map[String, String]
+  with_values : Map[String, String]
+  if_condition : String
+  continue_on_error : String
+  timeout_minutes : Int
+}
+
+pub struct WorkflowCallInputSpec {
+  description : String
+  required : Bool
+  default_value : String?
+  input_type : String
+}
+
+pub struct WorkflowCallOutputSpec {
+  description : String
+  value : String
+}
+
+pub struct WorkflowCallSecretSpec {
+  required : Bool
+}
+
+pub struct WorkflowCallSpec {
+  inputs : Map[String, WorkflowCallInputSpec]
+  outputs : Map[String, WorkflowCallOutputSpec]
+  secrets : Map[String, WorkflowCallSecretSpec]
+}
+
+pub struct WorkflowParseResult {
+  workflow : WorkflowSpec?
+  errors : Array[String]
+}
+
+pub struct WorkflowSpec {
+  name : String
+  run_name : String
+  trigger : PushTrigger
+  workflow_call : Bool
+  workflow_call_spec : WorkflowCallSpec?
+  permissions : PermissionsSpec?
+  concurrency : ConcurrencySpec?
+  env : Map[String, String]
+  defaults : RunDefaults
+  jobs : Array[JobSpec]
+}
+
+// Type aliases
+
+// Traits
+
