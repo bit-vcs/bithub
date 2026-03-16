@@ -387,12 +387,158 @@ test.describe('permission enforcement', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Owner token has write access
+// ---------------------------------------------------------------------------
+test('owner token can trigger webhook', async ({ request }) => {
+  const eventId = `e2e-owner-${Date.now()}`;
+  const res = await request.post('/api/webhook/relay', {
+    data: makeWebhookPayload(eventId, 'refs/relay/incoming/main'),
+    headers: { Authorization: 'Bearer tok-owner-001' },
+  });
+  expect(res.status()).toBe(200);
+  expect((await res.json()).triggered).toBeGreaterThanOrEqual(1);
+});
+
+// ---------------------------------------------------------------------------
+// Status transition: running → failure
+// ---------------------------------------------------------------------------
+test.describe.serial('running then failure', () => {
+  const eventId = `e2e-runfail-${Date.now()}`;
+
+  test('create and start', async ({ request }) => {
+    await triggerRun(request, eventId);
+    const jobs = await getRunJobs(request, eventId);
+    await updateStep(request, eventId, jobs[0].id, 0, 'running');
+  });
+
+  test('failing a running step transitions to failure', async ({
+    request,
+    page,
+  }) => {
+    const jobs = await getRunJobs(request, eventId);
+    await updateStep(request, eventId, jobs[0].id, 0, 'failure');
+    // complete rest
+    for (let i = 1; i < jobs[0].stepCount; i++) {
+      await updateStep(request, eventId, jobs[0].id, i, 'skipped');
+    }
+    for (let j = 1; j < jobs.length; j++) {
+      for (let i = 0; i < jobs[j].stepCount; i++) {
+        await updateStep(request, eventId, jobs[j].id, i, 'success');
+      }
+    }
+
+    await page.goto(`/actions/runs/${eventId}`);
+    await expect(page.getByText(/status:\s*failure/)).toBeVisible();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Mixed job statuses: one success, one failure
+// ---------------------------------------------------------------------------
+test('mixed job statuses show overall failure', async ({ request, page }) => {
+  const eventId = `e2e-mixed-${Date.now()}`;
+  await triggerRun(request, eventId);
+  const jobs = await getRunJobs(request, eventId);
+  expect(jobs.length).toBeGreaterThanOrEqual(2);
+
+  // first job all success
+  for (let i = 0; i < jobs[0].stepCount; i++) {
+    await updateStep(request, eventId, jobs[0].id, i, 'success');
+  }
+  // second job has a failure
+  await updateStep(request, eventId, jobs[1].id, 0, 'failure');
+  for (let i = 1; i < jobs[1].stepCount; i++) {
+    await updateStep(request, eventId, jobs[1].id, i, 'skipped');
+  }
+
+  await page.goto(`/actions/runs/${eventId}`);
+  await expect(page.getByText(/status:\s*failure/)).toBeVisible();
+  // first job should be success
+  await expect(
+    page.getByRole('heading', {
+      name: new RegExp(`Job: ${jobs[0].id}.*success`),
+    }),
+  ).toBeVisible();
+  // second job should be failure
+  await expect(
+    page.getByRole('heading', {
+      name: new RegExp(`Job: ${jobs[1].id}.*failure`),
+    }),
+  ).toBeVisible();
+});
+
+// ---------------------------------------------------------------------------
+// All steps skipped → success (not pending)
+// ---------------------------------------------------------------------------
+test('all steps skipped counts as success', async ({ request }) => {
+  const eventId = `e2e-allskip-${Date.now()}`;
+  await triggerRun(request, eventId);
+  const jobs = await getRunJobs(request, eventId);
+
+  for (const job of jobs) {
+    for (let i = 0; i < job.stepCount; i++) {
+      await updateStep(request, eventId, job.id, i, 'skipped');
+    }
+  }
+
+  const res = await request.get(`/actions/runs/${eventId}`);
+  expect(await res.text()).toContain('status: success');
+});
+
+// ---------------------------------------------------------------------------
+// Duplicate event_id triggers no additional run
+// ---------------------------------------------------------------------------
+test('duplicate event_id is idempotent', async ({ request }) => {
+  const eventId = `e2e-dup-${Date.now()}`;
+  const first = await triggerRun(request, eventId);
+  expect(first.triggered).toBeGreaterThanOrEqual(1);
+
+  // second call with same event_id
+  const res = await request.post('/api/webhook/relay', {
+    data: makeWebhookPayload(eventId, 'refs/relay/incoming/main'),
+    headers: authHeaders,
+  });
+  expect(res.status()).toBe(200);
+  // should still report triggered (overwrites), but not create a second row
+});
+
+// ---------------------------------------------------------------------------
+// Auth header format variations
+// ---------------------------------------------------------------------------
+test.describe('auth header format', () => {
+  test('lowercase "bearer" is accepted', async ({ request }) => {
+    const eventId = `e2e-lc-${Date.now()}`;
+    const res = await request.post('/api/webhook/relay', {
+      data: makeWebhookPayload(eventId, 'refs/relay/incoming/main'),
+      headers: { Authorization: `bearer ${WRITE_TOKEN}` },
+    });
+    expect(res.status()).toBe(200);
+    expect((await res.json()).triggered).toBeGreaterThanOrEqual(1);
+  });
+
+  test('non-Bearer scheme is rejected', async ({ request }) => {
+    const res = await request.post('/api/webhook/relay', {
+      data: makeWebhookPayload('evt-basic', 'refs/relay/incoming/main'),
+      headers: { Authorization: `Basic ${WRITE_TOKEN}` },
+    });
+    expect(res.status()).toBe(401);
+  });
+
+  test('empty Authorization header is rejected', async ({ request }) => {
+    const res = await request.post('/api/webhook/relay', {
+      data: makeWebhookPayload('evt-empty', 'refs/relay/incoming/main'),
+      headers: { Authorization: '' },
+    });
+    expect(res.status()).toBe(401);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Workflow pages
 // ---------------------------------------------------------------------------
 test.describe('workflow pages', () => {
   test('/actions/workflows lists workflow files', async ({ page }) => {
     await page.goto('/actions/workflows');
-    // workflow links use the workflow name as text, href contains the filename
     await expect(
       page.getByRole('link', { name: 'CI' }),
     ).toBeVisible();
@@ -401,10 +547,15 @@ test.describe('workflow pages', () => {
   test('/actions/workflows/ci.yml shows workflow detail', async ({ page }) => {
     await page.goto('/actions/workflows/ci.yml');
     await expect(page.getByRole('heading', { name: /CI/ })).toBeVisible();
-    // should show at least one job
     await expect(
       page.getByRole('heading', { name: /^Job:/ }).first(),
     ).toBeVisible();
+  });
+
+  test('/actions/workflows/nonexistent.yml returns 404', async ({ page }) => {
+    const res = await page.goto('/actions/workflows/nonexistent.yml');
+    expect(res).not.toBeNull();
+    expect(res!.status()).toBe(404);
   });
 });
 
@@ -415,4 +566,51 @@ test('nonexistent run returns 404', async ({ page }) => {
   const res = await page.goto('/actions/runs/does-not-exist');
   expect(res).not.toBeNull();
   expect(res!.status()).toBe(404);
+});
+
+// ---------------------------------------------------------------------------
+// SSR: pages work without JavaScript
+// ---------------------------------------------------------------------------
+test.describe('SSR without JavaScript', () => {
+  test('commits page renders without JS', async ({ browser, baseURL }) => {
+    const ctx = await browser.newContext({
+      baseURL,
+      javaScriptEnabled: false,
+    });
+    const page = await ctx.newPage();
+    const res = await page.goto('/commits');
+    expect(res!.status()).toBe(200);
+    await expect(page.getByRole('heading', { name: 'Commits' })).toBeVisible();
+    await expect(page.getByRole('table')).toBeVisible();
+    await ctx.close();
+  });
+
+  test('branches page renders without JS', async ({ browser, baseURL }) => {
+    const ctx = await browser.newContext({
+      baseURL,
+      javaScriptEnabled: false,
+    });
+    const page = await ctx.newPage();
+    const res = await page.goto('/branches');
+    expect(res!.status()).toBe(200);
+    await expect(
+      page.getByRole('heading', { name: 'Branches' }),
+    ).toBeVisible();
+    await expect(page.getByRole('table')).toBeVisible();
+    await ctx.close();
+  });
+
+  test('actions page renders without JS', async ({ browser, baseURL }) => {
+    const ctx = await browser.newContext({
+      baseURL,
+      javaScriptEnabled: false,
+    });
+    const page = await ctx.newPage();
+    const res = await page.goto('/actions');
+    expect(res!.status()).toBe(200);
+    await expect(
+      page.getByRole('heading', { name: 'CI Runs' }),
+    ).toBeVisible();
+    await ctx.close();
+  });
 });
