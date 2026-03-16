@@ -93,13 +93,13 @@ pub fn ApiState::process_relay_webhook(
   }
   let push_event = @actrun.new_push_event(branch, [])
   let workflow_dir = ".github/workflows"
-  let names = self.kv.list(workflow_dir)
+  let names = self.store.list(workflow_dir)
   for name in names {
     if not(name.has_suffix(".yml") || name.has_suffix(".yaml")) {
       continue
     }
     let path = workflow_dir + "/" + name
-    match self.kv.get(path) {
+    match self.store.get(path) {
       Some(bytes) => {
         let text = @utf8.decode_lossy(bytes)
         let result = @actrun.parse_workflow_yaml(text)
@@ -120,7 +120,7 @@ pub fn ApiState::process_relay_webhook(
                 triggered_at: occurred_at,
                 source,
               }
-              self.kv.set_string(
+              self.store.set_string(
                 "ci/runs/" + event_id,
                 serialize_ci_run(run),
               )
@@ -138,7 +138,7 @@ pub fn ApiState::process_relay_webhook(
                   started_at: "",
                   finished_at: "",
                 }
-                self.kv.set_string(
+                self.store.set_string(
                   "ci/jobs/" + event_id + "/" + job.id,
                   serialize_ci_job_run(job_run),
                 )
@@ -167,7 +167,7 @@ pub fn ApiState::process_relay_webhook(
                     uses: step.uses.unwrap_or(""),
                     run_cmd: run_preview,
                   }
-                  self.kv.set_string(
+                  self.store.set_string(
                     "ci/steps/" +
                     event_id +
                     "/" +
@@ -194,10 +194,10 @@ pub fn ApiState::process_relay_webhook(
 ///|
 pub fn ApiState::list_ci_runs(self : ApiState) -> Array[CiRun] {
   let runs : Array[CiRun] = []
-  let ids = self.kv.list("ci/runs")
+  let ids = self.store.list("ci/runs")
   for id in ids {
     let key = "ci/runs/" + id
-    match self.kv.get(key) {
+    match self.store.get(key) {
       Some(bytes) => {
         let text = @utf8.decode_lossy(bytes)
         match deserialize_ci_run(text) {
@@ -214,7 +214,7 @@ pub fn ApiState::list_ci_runs(self : ApiState) -> Array[CiRun] {
 ///|
 pub fn ApiState::get_ci_run(self : ApiState, id : String) -> CiRun? {
   let key = "ci/runs/" + id
-  match self.kv.get(key) {
+  match self.store.get(key) {
     Some(bytes) => deserialize_ci_run(@utf8.decode_lossy(bytes))
     None => None
   }
@@ -230,11 +230,11 @@ pub fn ApiState::get_ci_run_detail(
     None => return None
   }
   let jobs : Array[CiJobRunDetail] = []
-  let job_ids = self.kv.list("ci/jobs/" + run_id)
+  let job_ids = self.store.list("ci/jobs/" + run_id)
   job_ids.sort_by(fn(a, b) { String::compare(a, b) })
   for job_id in job_ids {
     let job_key = "ci/jobs/" + run_id + "/" + job_id
-    let job_run = match self.kv.get(job_key) {
+    let job_run = match self.store.get(job_key) {
       Some(bytes) =>
         match deserialize_ci_job_run(@utf8.decode_lossy(bytes)) {
           Some(j) => j
@@ -243,10 +243,10 @@ pub fn ApiState::get_ci_run_detail(
       None => continue
     }
     let steps : Array[CiStepRun] = []
-    let step_ids = self.kv.list("ci/steps/" + run_id + "/" + job_id)
+    let step_ids = self.store.list("ci/steps/" + run_id + "/" + job_id)
     for step_id in step_ids {
       let step_key = "ci/steps/" + run_id + "/" + job_id + "/" + step_id
-      match self.kv.get(step_key) {
+      match self.store.get(step_key) {
         Some(bytes) =>
           match deserialize_ci_step_run(@utf8.decode_lossy(bytes)) {
             Some(s) => steps.push(s)
@@ -276,7 +276,7 @@ pub fn ApiState::update_step_status(
     job_id +
     "/" +
     step_index.to_string()
-  let step_run = match self.kv.get(step_key) {
+  let step_run = match self.store.get(step_key) {
     Some(bytes) =>
       match deserialize_ci_step_run(@utf8.decode_lossy(bytes)) {
         Some(s) => s
@@ -301,13 +301,13 @@ pub fn ApiState::update_step_status(
     started_at: started,
     finished_at: finished,
   }
-  self.kv.set_string(step_key, serialize_ci_step_run(updated_step))
+  self.store.set_string(step_key, serialize_ci_step_run(updated_step))
   // Recompute job status
-  let step_ids = self.kv.list("ci/steps/" + run_id + "/" + job_id)
+  let step_ids = self.store.list("ci/steps/" + run_id + "/" + job_id)
   let step_statuses : Array[String] = []
   for sid in step_ids {
     let sk = "ci/steps/" + run_id + "/" + job_id + "/" + sid
-    match self.kv.get(sk) {
+    match self.store.get(sk) {
       Some(bytes) =>
         match deserialize_ci_step_run(@utf8.decode_lossy(bytes)) {
           Some(s) => step_statuses.push(s.status)
@@ -318,7 +318,7 @@ pub fn ApiState::update_step_status(
   }
   let job_status = derive_status(step_statuses)
   let job_key = "ci/jobs/" + run_id + "/" + job_id
-  match self.kv.get(job_key) {
+  match self.store.get(job_key) {
     Some(bytes) =>
       match deserialize_ci_job_run(@utf8.decode_lossy(bytes)) {
         Some(j) => {
@@ -333,7 +333,7 @@ pub fn ApiState::update_step_status(
           } else {
             j.finished_at
           }
-          self.kv.set_string(
+          self.store.set_string(
             job_key,
             serialize_ci_job_run(
               { ..j, status: job_status, started_at: j_started, finished_at: j_finished },
@@ -345,11 +345,11 @@ pub fn ApiState::update_step_status(
     None => ()
   }
   // Recompute run status
-  let all_job_ids = self.kv.list("ci/jobs/" + run_id)
+  let all_job_ids = self.store.list("ci/jobs/" + run_id)
   let job_statuses : Array[String] = []
   for jid in all_job_ids {
     let jk = "ci/jobs/" + run_id + "/" + jid
-    match self.kv.get(jk) {
+    match self.store.get(jk) {
       Some(bytes) =>
         match deserialize_ci_job_run(@utf8.decode_lossy(bytes)) {
           Some(j) => job_statuses.push(j.status)
@@ -361,7 +361,7 @@ pub fn ApiState::update_step_status(
   let run_status = derive_status(job_statuses)
   match self.get_ci_run(run_id) {
     Some(r) =>
-      self.kv.set_string(
+      self.store.set_string(
         "ci/runs/" + run_id,
         serialize_ci_run({ ..r, status: run_status }),
       )

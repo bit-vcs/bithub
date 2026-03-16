@@ -263,3 +263,59 @@ test "get_ci_run_detail returns None for missing run" {
   let api = ApiState::new()
   assert_true(api.get_ci_run_detail("nonexistent") is None)
 }
+
+// ---- Storage trait tests ----
+
+///|
+fn test_storage() -> &Storage {
+  MapStorage::new()
+}
+
+///|
+test "MapStorage: get/set/has/list" {
+  let s = test_storage()
+  assert_true(s.get("foo") is None)
+  assert_true(not(s.has("foo")))
+  s.set_string("foo", "bar")
+  assert_true(s.has("foo"))
+  let bytes = s.get("foo").unwrap()
+  inspect(@utf8.decode_lossy(bytes), content="bar")
+}
+
+///|
+test "MapStorage: list returns child keys at one level" {
+  let s = test_storage()
+  s.set_string("a/b/c", "1")
+  s.set_string("a/b/d", "2")
+  s.set_string("a/x", "3")
+  s.set_string("z", "4")
+  let children = s.list("a")
+  children.sort_by(fn(a, b) { String::compare(a, b) })
+  inspect(children, content="[\"b\", \"x\"]")
+  let grandchildren = s.list("a/b")
+  grandchildren.sort_by(fn(a, b) { String::compare(a, b) })
+  inspect(grandchildren, content="[\"c\", \"d\"]")
+  let root = s.list("")
+  root.sort_by(fn(a, b) { String::compare(a, b) })
+  inspect(root, content="[\"a\", \"z\"]")
+}
+
+///|
+test "ApiState works with MapStorage backend" {
+  let s : &Storage = MapStorage::new()
+  s.set_string("README.md", "# test")
+  s.set_string(
+    ".github/workflows/ci.yml",
+    "name: CI\non:\n  push:\n    branches:\n      - main\njobs:\n  build:\n    runs-on: ubuntu-latest\n    steps:\n      - uses: actions/checkout@v4\n      - name: Test\n        run: echo ok",
+  )
+  s.set_string("auth/tokens/test-tok", "identity=tester\nrole=write")
+  let api = ApiState::with_storage(s)
+  inspect(api.readme_markdown(), content="# test")
+  // Auth works
+  let auth = api.authenticate(Some("Bearer test-tok"))
+  assert_true(auth is Authenticated(_))
+  // Workflows detected
+  let wfs = api.list_workflows()
+  inspect(wfs.length(), content="1")
+  inspect(wfs[0].name, content="CI")
+}

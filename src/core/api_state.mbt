@@ -117,27 +117,17 @@ impl @bitlib.ObjectStore for KvObjectStore with has(self, id) {
 
 ///|
 pub struct ApiState {
-  kv : @kv.Kv
+  store : &Storage
 }
 
 ///|
 pub fn ApiState::new() -> ApiState {
-  let fs = @bit.TestFs::new()
-  let bit_fs = @bitfs.Fs::empty("/repo/.git")
-  let tree : KvWorkingTree = { fs: bit_fs, backing_fs: fs, write_fs: fs }
-  let store : KvObjectStore = {
-    backing_fs: fs,
-    write_fs: fs,
-    git_dir: "/repo/.git",
-  }
-  let kv = @kv.Kv::new(
-    @kv.NodeId::new("bithub"),
-    tree,
-    store,
-    @bit.ObjectId::zero(),
-  )
-  seed_files(kv)
-  { kv, }
+  { store: MemoryStorage::new_seeded() }
+}
+
+///|
+pub fn ApiState::with_storage(store : &Storage) -> ApiState {
+  { store, }
 }
 
 ///|
@@ -166,12 +156,12 @@ pub fn ApiState::list_entries(
   raw_path : String,
 ) -> Array[FileEntry] {
   let path = normalize_path(raw_path)
-  let names = self.kv.list(path)
+  let names = self.store.list(path)
   names.sort_by(fn(a, b) { String::compare(a, b) })
   let entries : Array[FileEntry] = []
   for name in names {
     let full_path = join_path(path, name)
-    entries.push({ name, path: full_path, is_dir: not(self.kv.has(full_path)) })
+    entries.push({ name, path: full_path, is_dir: not(self.store.has(full_path)) })
   }
   entries
 }
@@ -179,14 +169,14 @@ pub fn ApiState::list_entries(
 ///|
 pub fn ApiState::file_text(self : ApiState, raw_path : String) -> String? {
   let path = normalize_path(raw_path)
-  match self.kv.get(path) {
+  match self.store.get(path) {
     Some(bytes) => Some(@utf8.decode_lossy(bytes))
     None => None
   }
 }
 
 ///|
-fn seed_files(kv : @kv.Kv) -> Unit {
+fn seed_files(kv : &Storage) -> Unit {
   let readme =
     #|# bithub
     #|
@@ -390,7 +380,7 @@ pub fn ApiState::resolve_token(self : ApiState, token : String) -> TokenInfo? {
   if token.length() == 0 {
     return None
   }
-  match self.kv.get("auth/tokens/" + token) {
+  match self.store.get("auth/tokens/" + token) {
     Some(bytes) => {
       let text = @utf8.decode_lossy(bytes)
       let fields = parse_kv_fields(text)
@@ -413,10 +403,10 @@ pub fn ApiState::resolve_token(self : ApiState, token : String) -> TokenInfo? {
 
 ///|
 pub fn ApiState::list_tokens(self : ApiState) -> Array[TokenInfo] {
-  let names = self.kv.list("auth/tokens")
+  let names = self.store.list("auth/tokens")
   let entries : Array[TokenInfo] = []
   for name in names {
-    match self.kv.get("auth/tokens/" + name) {
+    match self.store.get("auth/tokens/" + name) {
       Some(bytes) => {
         let text = @utf8.decode_lossy(bytes)
         let fields = parse_kv_fields(text)
@@ -502,10 +492,10 @@ pub struct DiffFileEntry {
 
 ///|
 pub fn ApiState::list_commits(self : ApiState) -> Array[CommitEntry] {
-  let shas = self.kv.list("git/commits")
+  let shas = self.store.list("git/commits")
   let entries : Array[CommitEntry] = []
   for sha in shas {
-    match self.kv.get("git/commits/" + sha) {
+    match self.store.get("git/commits/" + sha) {
       Some(bytes) => {
         let text = @utf8.decode_lossy(bytes)
         match parse_commit_entry(text, sha) {
@@ -522,7 +512,7 @@ pub fn ApiState::list_commits(self : ApiState) -> Array[CommitEntry] {
 
 ///|
 pub fn ApiState::get_commit(self : ApiState, sha : String) -> CommitDetail? {
-  match self.kv.get("git/commits/" + sha) {
+  match self.store.get("git/commits/" + sha) {
     Some(bytes) => {
       let text = @utf8.decode_lossy(bytes)
       match parse_commit_entry(text, sha) {
@@ -530,9 +520,9 @@ pub fn ApiState::get_commit(self : ApiState, sha : String) -> CommitDetail? {
           let fields = parse_kv_fields(text)
           let parent = fields.get("parent").unwrap_or("")
           let diff_files : Array[DiffFileEntry] = []
-          let diff_keys = self.kv.list("git/diffs/" + sha)
+          let diff_keys = self.store.list("git/diffs/" + sha)
           for dk in diff_keys {
-            match self.kv.get("git/diffs/" + sha + "/" + dk) {
+            match self.store.get("git/diffs/" + sha + "/" + dk) {
               Some(dbytes) => {
                 let dt = @utf8.decode_lossy(dbytes)
                 let df = parse_kv_fields(dt)
@@ -577,10 +567,10 @@ pub struct BranchEntry {
 
 ///|
 pub fn ApiState::list_branches(self : ApiState) -> Array[BranchEntry] {
-  let names = self.kv.list("git/branches")
+  let names = self.store.list("git/branches")
   let entries : Array[BranchEntry] = []
   for name in names {
-    match self.kv.get("git/branches/" + name) {
+    match self.store.get("git/branches/" + name) {
       Some(bytes) => {
         let text = @utf8.decode_lossy(bytes)
         let fields = parse_kv_fields(text)
@@ -642,14 +632,14 @@ pub struct WorkflowStepSummary {
 pub fn ApiState::list_workflows(self : ApiState) -> Array[WorkflowEntry] {
   let entries : Array[WorkflowEntry] = []
   let workflow_dir = ".github/workflows"
-  let names = self.kv.list(workflow_dir)
+  let names = self.store.list(workflow_dir)
   names.sort_by(fn(a, b) { String::compare(a, b) })
   for name in names {
     let path = workflow_dir + "/" + name
     if not(name.has_suffix(".yml") || name.has_suffix(".yaml")) {
       continue
     }
-    match self.kv.get(path) {
+    match self.store.get(path) {
       Some(bytes) => {
         let text = @utf8.decode_lossy(bytes)
         let result = @actrun.parse_workflow_yaml(text)
@@ -685,7 +675,7 @@ pub fn ApiState::workflow_detail(
   filename : String,
 ) -> WorkflowDetail? {
   let path = ".github/workflows/" + filename
-  match self.kv.get(path) {
+  match self.store.get(path) {
     Some(bytes) => {
       let text = @utf8.decode_lossy(bytes)
       let result = @actrun.parse_workflow_yaml(text)
