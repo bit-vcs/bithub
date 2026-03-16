@@ -1,0 +1,13 @@
+name = "bithub"
+main = "worker-entry.js"
+compatibility_date = "2026-01-01"
+
+[observability]
+enabled = true
+
+# Cloudflare Containers for CI job execution
+# [[containers.apps]]
+# name = "ci-runner"
+# image = "./containers/ci-runner"
+# max_instances = 3
+# instance_type = "basic"

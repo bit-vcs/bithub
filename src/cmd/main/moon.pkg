@@ -3,3 +3,8 @@ import {
   "mizchi/mars",
   "bit-vcs/bithub/adapters/mars_http" @mars_http,
 }
+
+options(
+  is_main: true,
+  link: { "js": { "format": "esm", "exports": ["fetch"] } },
+)
