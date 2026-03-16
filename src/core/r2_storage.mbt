@@ -97,16 +97,3 @@ pub impl Storage for R2Storage with has(self, key) {
 }
 
 ///|
-/// Preload R2 data into in-memory cache for synchronous access.
-/// Call this at the start of a request handler in Workers.
-extern "js" fn r2_preload_cache(
-  bucket_name : String,
-  prefix : String,
-) -> Unit =
-  #| (() => {
-  #|   return (bucket_name, prefix) => {
-  #|     // In Workers, this would be called with await in the fetch handler
-  #|     // to populate __r2_cache before synchronous Storage calls
-  #|     if (!globalThis.__r2_cache) globalThis.__r2_cache = {};
-  #|   };
-  #| })()

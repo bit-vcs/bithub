@@ -70,7 +70,7 @@ pub fn create_app_with_storage(api : @core.ApiState) -> @mars.Server {
   let app = @mars.Server::new()
   app.post(
     "/api/webhook/relay",
-    @mars.handler(fn(ctx) {
+    @mars.handler(async fn(ctx) {
       guard require_write(api, ctx) is Some(_) else { return }
       let json_opt = ctx.body_json()
       match json_opt {
@@ -113,7 +113,7 @@ pub fn create_app_with_storage(api : @core.ApiState) -> @mars.Server {
   )
   app.post(
     "/api/actions/runs/status",
-    @mars.handler(fn(ctx) {
+    @mars.handler(async fn(ctx) {
       guard require_write(api, ctx) is Some(_) else { return }
       let json_opt = ctx.body_json()
       match json_opt {
@@ -178,7 +178,7 @@ pub fn create_app_with_storage(api : @core.ApiState) -> @mars.Server {
   )
   app.post(
     "/api/issues",
-    @mars.handler(fn(ctx) {
+    @mars.handler(async fn(ctx) {
       guard require_write(api, ctx) is Some(token_info) else { return }
       match ctx.body_json() {
         Some(json) => {
@@ -224,7 +224,7 @@ pub fn create_app_with_storage(api : @core.ApiState) -> @mars.Server {
   )
   app.post(
     "/api/issues/:id/comments",
-    @mars.handler(fn(ctx) {
+    @mars.handler(async fn(ctx) {
       guard require_write(api, ctx) is Some(token_info) else { return }
       let issue_id = ctx.param("id").unwrap_or("")
       if issue_id.length() == 0 {
@@ -275,7 +275,7 @@ pub fn create_app_with_storage(api : @core.ApiState) -> @mars.Server {
   )
   app.post(
     "/api/files",
-    @mars.handler(fn(ctx) {
+    @mars.handler(async fn(ctx) {
       guard require_write(api, ctx) is Some(token_info) else { return }
       match ctx.body_json() {
         Some(json) => {
@@ -334,7 +334,7 @@ pub fn create_app_with_storage(api : @core.ApiState) -> @mars.Server {
   )
   app.post(
     "/api/pulls/:id/comments",
-    @mars.handler(fn(ctx) {
+    @mars.handler(async fn(ctx) {
       guard require_write(api, ctx) is Some(token_info) else { return }
       let pr_id = ctx.param("id").unwrap_or("")
       match ctx.body_json() {
@@ -377,7 +377,7 @@ pub fn create_app_with_storage(api : @core.ApiState) -> @mars.Server {
   )
   app.post(
     "/api/issues/:id/state",
-    @mars.handler(fn(ctx) {
+    @mars.handler(async fn(ctx) {
       guard require_write(api, ctx) is Some(_) else { return }
       let issue_id = ctx.param("id").unwrap_or("")
       match ctx.body_json() {
@@ -410,7 +410,7 @@ pub fn create_app_with_storage(api : @core.ApiState) -> @mars.Server {
   )
   app.post(
     "/api/pulls",
-    @mars.handler(fn(ctx) {
+    @mars.handler(async fn(ctx) {
       guard require_write(api, ctx) is Some(token_info) else { return }
       match ctx.body_json() {
         Some(json) => {
