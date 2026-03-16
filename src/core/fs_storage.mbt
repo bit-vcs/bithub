@@ -15,7 +15,7 @@ pub fn FsStorage::new(root : String) -> FsStorage {
 }
 
 ///|
-fn fs_key_path(self : FsStorage, key : String) -> String {
+fn FsStorage::fs_key_path(self : FsStorage, key : String) -> String {
   if self.root.has_suffix("/") {
     self.root + key
   } else {

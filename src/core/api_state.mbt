@@ -1162,7 +1162,7 @@ pub fn ApiState::edit_file(
 }
 
 ///|
-fn simple_hash(input : String) -> String {
+pub fn simple_hash(input : String) -> String {
   let mut h = 5381
   for c in input {
     h = h * 33 + c.to_int()
