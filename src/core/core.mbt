@@ -34,6 +34,21 @@ pub fn mars_route_specs() -> Array[RouteSpec] {
       path: "/actions/runs/:id",
     },
     {
+      id: "commits",
+      http_method: "GET",
+      path: "/commits",
+    },
+    {
+      id: "commit_detail",
+      http_method: "GET",
+      path: "/commit/:sha",
+    },
+    {
+      id: "branches",
+      http_method: "GET",
+      path: "/branches",
+    },
+    {
       id: "webhook_relay",
       http_method: "POST",
       path: "/api/webhook/relay",

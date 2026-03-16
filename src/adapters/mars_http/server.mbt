@@ -106,6 +106,21 @@ pub fn create_app() -> @mars.Server {
         let page = render_file_page(api, path)
         return ctx.html(page.html, status=page.status)
       }
+      if route == "/commits" {
+        return ctx.html(render_commits_page(api), status=200)
+      }
+      if route.has_prefix("/commit/") {
+        let sha = String::unsafe_substring(
+          route,
+          start="/commit/".length(),
+          end=route.length(),
+        )
+        let page = render_commit_detail_page(api, sha)
+        return ctx.html(page.html, status=page.status)
+      }
+      if route == "/branches" {
+        return ctx.html(render_branches_page(api), status=200)
+      }
       if route == "/actions/workflows" {
         return ctx.html(render_workflows_page(api), status=200)
       }
@@ -150,6 +165,12 @@ fn render_home_page() -> String {
     @luna.h("ul", [], [
       @luna.h("li", [], [@components.link("/readme", [@luna.text("README.md")])]),
       @luna.h("li", [], [@components.link("/filer", [@luna.text("files")])]),
+      @luna.h("li", [], [
+        @components.link("/commits", [@luna.text("commits")]),
+      ]),
+      @luna.h("li", [], [
+        @components.link("/branches", [@luna.text("branches")]),
+      ]),
       @luna.h("li", [], [
         @components.link("/actions/workflows", [@luna.text("workflows")]),
       ]),
@@ -381,6 +402,10 @@ fn render_layout(
             @luna.text(" | "),
             @components.link("/filer", [@luna.text("filer")]),
             @luna.text(" | "),
+            @components.link("/commits", [@luna.text("commits")]),
+            @luna.text(" | "),
+            @components.link("/branches", [@luna.text("branches")]),
+            @luna.text(" | "),
             @components.link("/actions/workflows", [@luna.text("workflows")]),
             @luna.text(" | "),
             @components.link("/actions", [@luna.text("actions")]),
@@ -510,6 +535,186 @@ fn find_char(s : String, target : Char) -> Int {
     idx += 1
   }
   -1
+}
+
+///|
+fn render_commits_page(api : @core.ApiState) -> String {
+  let commits = api.list_commits()
+  let rows : Array[@luna.Node[Unit, String]] = []
+  for commit in commits {
+    let short_sha = if commit.sha.length() > 7 {
+      String::unsafe_substring(commit.sha, start=0, end=7)
+    } else {
+      commit.sha
+    }
+    let first_line = match commit.message.find("\n") {
+      Some(i) => String::unsafe_substring(commit.message, start=0, end=i)
+      None => commit.message
+    }
+    rows.push(
+      @luna.h("tr", [], [
+        @luna.h("td", [], [
+          @components.link("/commit/" + commit.sha, [@luna.text(short_sha)]),
+        ]),
+        @luna.h("td", [], [@luna.text(first_line)]),
+        @luna.h("td", [], [@luna.text(commit.author)]),
+        @luna.h("td", [], [@luna.text(commit.timestamp)]),
+      ]),
+    )
+  }
+  if rows.length() == 0 {
+    rows.push(
+      @luna.h("tr", [], [
+        @luna.h("td", [("colspan", @luna.attr_static("4"))], [
+          @luna.text("No commits"),
+        ]),
+      ]),
+    )
+  }
+  let table = @luna.h("table", [("class", @luna.attr_static("wf-table"))], [
+    @luna.h("thead", [], [
+      @luna.h("tr", [], [
+        @luna.h("th", [], [@luna.text("SHA")]),
+        @luna.h("th", [], [@luna.text("Message")]),
+        @luna.h("th", [], [@luna.text("Author")]),
+        @luna.h("th", [], [@luna.text("Date")]),
+      ]),
+    ]),
+    @luna.h("tbody", [], rows),
+  ])
+  render_layout("Commits", [
+    @luna.h("h1", [], [@luna.text("Commits")]),
+    table,
+  ])
+}
+
+///|
+fn render_commit_detail_page(
+  api : @core.ApiState,
+  sha : String,
+) -> PageHtml {
+  if sha.length() == 0 {
+    return {
+      status: 400,
+      html: render_layout("Commit", [
+        @luna.h("h1", [], [@luna.text("Commit")]),
+        @luna.h("p", [], [@luna.text("usage: /commit/:sha")]),
+      ]),
+    }
+  }
+  match api.get_commit(sha) {
+    Some(detail) => {
+      let content : Array[@luna.Node[Unit, String]] = [
+        @luna.h("h1", [], [
+          @luna.text("Commit: " + sha),
+        ]),
+        @luna.h("p", [], [
+          @luna.text(detail.commit.message),
+        ]),
+        @luna.h("p", [], [
+          @luna.text(
+            "author: " +
+            detail.commit.author +
+            " | date: " +
+            detail.commit.timestamp,
+          ),
+        ]),
+      ]
+      if detail.parent_sha.length() > 0 {
+        content.push(
+          @luna.h("p", [], [
+            @luna.text("parent: "),
+            @components.link(
+              "/commit/" + detail.parent_sha,
+              [@luna.text(detail.parent_sha)],
+            ),
+          ]),
+        )
+      }
+      if detail.diff_files.length() > 0 {
+        content.push(
+          @luna.h("h2", [], [
+            @luna.text(
+              "Changed files (" + detail.diff_files.length().to_string() + ")",
+            ),
+          ]),
+        )
+        let diff_nodes : Array[@luna.Node[Unit, String]] = []
+        for df in detail.diff_files {
+          diff_nodes.push(
+            @luna.h("li", [], [
+              @luna.h("strong", [], [@luna.text(df.path)]),
+              @luna.text(" [" + df.kind + "]"),
+              if df.patch.length() > 0 {
+                @luna.h("pre", [("class", @luna.attr_static("source-code"))], [
+                  @luna.h("code", [], [@luna.text(df.patch)]),
+                ])
+              } else {
+                @luna.text("")
+              },
+            ]),
+          )
+        }
+        content.push(@luna.h("ul", [], diff_nodes))
+      }
+      { status: 200, html: render_layout("Commit: " + sha, content) }
+    }
+    None => {
+      status: 404,
+      html: render_layout("Commit", [
+        @luna.h("h1", [], [@luna.text("Commit: " + sha)]),
+        @luna.h("p", [], [@luna.text("commit not found")]),
+      ]),
+    }
+  }
+}
+
+///|
+fn render_branches_page(api : @core.ApiState) -> String {
+  let branches = api.list_branches()
+  let rows : Array[@luna.Node[Unit, String]] = []
+  for branch in branches {
+    let short_sha = if branch.sha.length() > 7 {
+      String::unsafe_substring(branch.sha, start=0, end=7)
+    } else {
+      branch.sha
+    }
+    let name_label = if branch.current {
+      "* " + branch.name
+    } else {
+      branch.name
+    }
+    rows.push(
+      @luna.h("tr", [], [
+        @luna.h("td", [], [@luna.text(name_label)]),
+        @luna.h("td", [], [
+          @components.link("/commit/" + branch.sha, [@luna.text(short_sha)]),
+        ]),
+      ]),
+    )
+  }
+  if rows.length() == 0 {
+    rows.push(
+      @luna.h("tr", [], [
+        @luna.h("td", [("colspan", @luna.attr_static("2"))], [
+          @luna.text("No branches"),
+        ]),
+      ]),
+    )
+  }
+  let table = @luna.h("table", [("class", @luna.attr_static("wf-table"))], [
+    @luna.h("thead", [], [
+      @luna.h("tr", [], [
+        @luna.h("th", [], [@luna.text("Branch")]),
+        @luna.h("th", [], [@luna.text("SHA")]),
+      ]),
+    ]),
+    @luna.h("tbody", [], rows),
+  ])
+  render_layout("Branches", [
+    @luna.h("h1", [], [@luna.text("Branches")]),
+    table,
+  ])
 }
 
 ///|

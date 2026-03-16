@@ -77,6 +77,9 @@ jobs:
       - name: Run Playwright CI webhook tests
         run: pnpm test:e2e:ci
 
+      - name: Run Playwright commits/branches tests
+        run: pnpm test:e2e:git
+
   bench:
     name: Moon benchmark
     runs-on: ubuntu-latest

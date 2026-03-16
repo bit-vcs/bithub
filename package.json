@@ -8,6 +8,7 @@
     "test:e2e:viewer": "playwright test --project bithub-viewer",
     "test:e2e:cf": "playwright test --project main-fetch-cloudflare",
     "test:e2e:ci": "playwright test --project ci-webhook",
+    "test:e2e:git": "playwright test --project commits-branches",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:ui": "playwright test --ui"
   },

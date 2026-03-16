@@ -303,6 +303,174 @@ fn seed_files(kv : @kv.Kv) -> Unit {
     #|- keep adapter replaceable
     #|- cloudflare js target first
   kv.set_string("docs/notes.txt", notes)
+  // Seed: branches
+  kv.set_string(
+    "git/branches/main",
+    "sha=abc1234\ncurrent=true\nname=main",
+  )
+  kv.set_string(
+    "git/branches/feat--ci-webhook",
+    "sha=def5678\ncurrent=false\nname=feat/ci-webhook",
+  )
+  kv.set_string(
+    "git/branches/fix--template-literal",
+    "sha=aaa9999\ncurrent=false\nname=fix/template-literal",
+  )
+  // Seed: commits
+  kv.set_string(
+    "git/commits/abc1234",
+    "message=feat: add relay webhook CI tracking\nauthor=mizchi <mz@example.com>\ntimestamp=1773660000\nparent=bbb2345",
+  )
+  kv.set_string(
+    "git/commits/bbb2345",
+    "message=fix: escape template literal in split resizer\nauthor=mizchi <mz@example.com>\ntimestamp=1773650000\nparent=ccc3456",
+  )
+  kv.set_string(
+    "git/commits/ccc3456",
+    "message=chore: update dependencies\nauthor=mizchi <mz@example.com>\ntimestamp=1773640000\nparent=",
+  )
+  // Seed: diffs for first commit
+  kv.set_string(
+    "git/diffs/abc1234/0",
+    "path=src/core/ci.mbt\nkind=added\npatch=+pub fn process_relay_webhook(...)",
+  )
+  kv.set_string(
+    "git/diffs/abc1234/1",
+    "path=src/adapters/mars_http/server.mbt\nkind=modified\npatch=+app.post(\"/api/webhook/relay\", ...)",
+  )
+  kv.set_string(
+    "git/diffs/bbb2345/0",
+    "path=src/cmd/bithub/viewer.mbt\nkind=modified\npatch=-layout.style.setProperty('--sidebar-size', `${current}px`);\n+layout.style.setProperty('--sidebar-size', current + 'px');",
+  )
+}
+
+// ---- Commits ----
+
+///|
+pub struct CommitEntry {
+  sha : String
+  message : String
+  author : String
+  timestamp : String
+}
+
+///|
+pub struct CommitDetail {
+  commit : CommitEntry
+  parent_sha : String
+  diff_files : Array[DiffFileEntry]
+}
+
+///|
+pub struct DiffFileEntry {
+  path : String
+  kind : String // "added", "modified", "deleted"
+  patch : String
+}
+
+///|
+pub fn ApiState::list_commits(self : ApiState) -> Array[CommitEntry] {
+  let shas = self.kv.list("git/commits")
+  let entries : Array[CommitEntry] = []
+  for sha in shas {
+    match self.kv.get("git/commits/" + sha) {
+      Some(bytes) => {
+        let text = @utf8.decode_lossy(bytes)
+        match parse_commit_entry(text, sha) {
+          Some(entry) => entries.push(entry)
+          None => ()
+        }
+      }
+      None => ()
+    }
+  }
+  entries.sort_by(fn(a, b) { String::compare(b.timestamp, a.timestamp) })
+  entries
+}
+
+///|
+pub fn ApiState::get_commit(self : ApiState, sha : String) -> CommitDetail? {
+  match self.kv.get("git/commits/" + sha) {
+    Some(bytes) => {
+      let text = @utf8.decode_lossy(bytes)
+      match parse_commit_entry(text, sha) {
+        Some(commit) => {
+          let fields = parse_kv_fields(text)
+          let parent = fields.get("parent").unwrap_or("")
+          let diff_files : Array[DiffFileEntry] = []
+          let diff_keys = self.kv.list("git/diffs/" + sha)
+          for dk in diff_keys {
+            match self.kv.get("git/diffs/" + sha + "/" + dk) {
+              Some(dbytes) => {
+                let dt = @utf8.decode_lossy(dbytes)
+                let df = parse_kv_fields(dt)
+                diff_files.push({
+                  path: df.get("path").unwrap_or(dk),
+                  kind: df.get("kind").unwrap_or("modified"),
+                  patch: df.get("patch").unwrap_or(""),
+                })
+              }
+              None => ()
+            }
+          }
+          Some({ commit, parent_sha: parent, diff_files })
+        }
+        None => None
+      }
+    }
+    None => None
+  }
+}
+
+///|
+fn parse_commit_entry(text : String, sha : String) -> CommitEntry? {
+  let fields = parse_kv_fields(text)
+  let message = fields.get("message").unwrap_or("")
+  let author = fields.get("author").unwrap_or("")
+  let timestamp = fields.get("timestamp").unwrap_or("")
+  if message.length() == 0 && author.length() == 0 {
+    return None
+  }
+  Some({ sha, message, author, timestamp })
+}
+
+// ---- Branches ----
+
+///|
+pub struct BranchEntry {
+  name : String
+  sha : String
+  current : Bool
+}
+
+///|
+pub fn ApiState::list_branches(self : ApiState) -> Array[BranchEntry] {
+  let names = self.kv.list("git/branches")
+  let entries : Array[BranchEntry] = []
+  for name in names {
+    match self.kv.get("git/branches/" + name) {
+      Some(bytes) => {
+        let text = @utf8.decode_lossy(bytes)
+        let fields = parse_kv_fields(text)
+        entries.push({
+          name: fields.get("name").unwrap_or(name),
+          sha: fields.get("sha").unwrap_or(""),
+          current: fields.get("current").unwrap_or("") == "true",
+        })
+      }
+      None => ()
+    }
+  }
+  entries.sort_by(fn(a, b) {
+    if a.current && not(b.current) {
+      return -1
+    }
+    if not(a.current) && b.current {
+      return 1
+    }
+    String::compare(a.name, b.name)
+  })
+  entries
 }
 
 ///|
