@@ -84,7 +84,7 @@ jobs:
         run: pnpm test:e2e:features
 
       - name: Run Playwright PR/webhook tests
-        run: playwright test --project pulls-webhooks
+        run: pnpm exec playwright test --project pulls-webhooks
 
   bench:
     name: Moon benchmark
