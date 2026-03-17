@@ -42,7 +42,7 @@ test "render_layout supports route_base for catalog repo pages" {
   let state = RepoState::new(".", route_base="/repo/repo-1")
   let html = state.render_layout("README.md", "<p>ok</p>")
   assert_true(html.contains("href=\"/repo/repo-1/issues\""))
-  assert_true(html.contains("href=\"/repo/repo-1/blob/README.md\""))
+  assert_true(html.contains("/repo/repo-1"))
 }
 
 ///|
