@@ -118,16 +118,17 @@ impl @bitlib.ObjectStore for KvObjectStore with has(self, id) {
 ///|
 pub struct ApiState {
   store : &Storage
+  repo_root : String
 }
 
 ///|
 pub fn ApiState::new() -> ApiState {
-  { store: MemoryStorage::new_seeded() }
+  { store: MemoryStorage::new_seeded(), repo_root: "" }
 }
 
 ///|
 pub fn ApiState::with_storage(store : &Storage) -> ApiState {
-  { store, }
+  { store, repo_root: "" }
 }
 
 ///|
@@ -143,14 +144,12 @@ pub fn ApiState::from_repo(root : String) -> ApiState {
   if store.get("README.md") is None {
     let files = scan_files(root)
     load_files_into_storage(store, root, files)
-    match read_file_string(root + "/.github/workflows/ci.yml") {
-      Some(content) => store.set_string(".github/workflows/ci.yml", content)
-      None => ()
-    }
+    load_workflow_files(store, root)
   }
   // Always refresh git data
   load_git_commits_into_storage(store, node_fs, git_dir)
   load_git_branches_into_storage(store, node_fs, git_dir)
+  load_git_tags_into_storage(store, node_fs, git_dir)
   // Ensure auth tokens exist
   if store.get("auth/tokens/tok-owner-001") is None {
     store.set_string("auth/tokens/tok-owner-001", "identity=admin\nrole=owner")
@@ -158,7 +157,7 @@ pub fn ApiState::from_repo(root : String) -> ApiState {
     store.set_string("auth/tokens/tok-alice", "identity=agent-alice\nrole=owner")
     store.set_string("auth/tokens/tok-bob", "identity=agent-bob\nrole=write")
   }
-  { store, }
+  { store, repo_root: root }
 }
 
 ///|
@@ -1142,10 +1141,20 @@ pub fn ApiState::edit_file(
   }
   // Write file to storage
   self.store.set_string(path, content)
+  if self.repo_root.length() > 0 {
+    let full_path = self.repo_root + "/" + path
+    write_file_and_commit(full_path, content, message, author)
+  }
   // Create a commit entry for this edit
   let commits = self.list_commits()
   let parent = if commits.length() > 0 { commits[0].sha } else { "" }
-  let sha = "edit-" + timestamp + "-" + simple_hash(path + content)
+  let sha = if self.repo_root.length() > 0 {
+    git_head_sha(self.repo_root).unwrap_or(
+      "edit-" + timestamp + "-" + simple_hash(path + content),
+    )
+  } else {
+    "edit-" + timestamp + "-" + simple_hash(path + content)
+  }
   let meta = [
     "message=" + message,
     "author=" + author,

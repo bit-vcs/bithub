@@ -494,6 +494,24 @@ pub fn create_app_with_storage(api : @core.ApiState) -> @mars.Server {
       ctx.json(resp.to_json())
     }),
   )
+  app.post(
+    "/api/trigger",
+    @mars.handler(fn(ctx) {
+      guard require_write(api, ctx) is Some(_) else { return }
+      let runs = api.process_relay_webhook({
+        "event_type": "relay.incoming_ref",
+        "event_id": "local-" + @core.simple_hash(now_epoch_string()),
+        "ref": "refs/relay/incoming/main",
+        "source": "local-trigger",
+        "occurred_at": 0,
+        "room": "main",
+        "target": "session:local",
+      })
+      let resp : Map[String, Json] = {}
+      resp.set("triggered", runs.length().to_json())
+      ctx.json(resp.to_json())
+    }),
+  )
   app.get(
     "*",
     @mars.handler(fn(ctx) {

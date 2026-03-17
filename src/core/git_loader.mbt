@@ -89,6 +89,96 @@ pub fn load_files_into_storage(
 }
 
 ///|
+pub fn write_file_and_commit(
+  full_path : String,
+  content : String,
+  message : String,
+  author : String,
+) -> Unit {
+  write_file_to_disk(full_path, content)
+  let dir = parent_dir(full_path)
+  git_exec(dir, "git add " + full_path)
+  let author_arg = if author.length() > 0 && not(author.contains("<")) {
+    " --author=\"" + author + " <" + author + "@bithub>\""
+  } else if author.length() > 0 {
+    " --author=\"" + author + "\""
+  } else {
+    ""
+  }
+  git_exec(dir, "git commit -m \"" + message + "\"" + author_arg + " --allow-empty")
+}
+
+///|
+pub fn git_head_sha(repo_root : String) -> String? {
+  git_head_sha_ffi(repo_root)
+}
+
+///|
+extern "js" fn git_head_sha_ffi(repo_root : String) -> String? =
+  #| (root) => {
+  #|   try {
+  #|     const { execSync } = require("node:child_process");
+  #|     return execSync("git rev-parse HEAD", { cwd: root, encoding: "utf-8" }).trim();
+  #|   } catch { return undefined; }
+  #| }
+
+///|
+extern "js" fn write_file_to_disk(path : String, content : String) -> Unit =
+  #| (path, content) => {
+  #|   const fs = require("node:fs");
+  #|   const dir = require("node:path").dirname(path);
+  #|   fs.mkdirSync(dir, { recursive: true });
+  #|   fs.writeFileSync(path, content, "utf-8");
+  #| }
+
+///|
+extern "js" fn git_exec(cwd : String, cmd : String) -> Unit =
+  #| (cwd, cmd) => {
+  #|   try {
+  #|     const { execSync } = require("node:child_process");
+  #|     execSync(cmd, { cwd, timeout: 10000, stdio: "ignore" });
+  #|   } catch {}
+  #| }
+
+///|
+extern "js" fn parent_dir(path : String) -> String =
+  #| (path) => require("node:path").dirname(path)
+
+///|
+pub fn load_workflow_files(store : &Storage, root : String) -> Unit {
+  let wf_dir = root + "/.github/workflows"
+  let files = scan_readdir(wf_dir)
+  for name in files {
+    if name.has_suffix(".yml") || name.has_suffix(".yaml") {
+      match read_file_string(wf_dir + "/" + name) {
+        Some(content) =>
+          store.set_string(".github/workflows/" + name, content)
+        None => ()
+      }
+    }
+  }
+}
+
+///|
+pub fn load_git_tags_into_storage(
+  store : &Storage,
+  _fs : &@bit.RepoFileSystem,
+  git_dir : String,
+) -> Unit {
+  let tag_dir = git_dir + "/refs/tags"
+  let names = scan_readdir(tag_dir)
+  for name in names {
+    match read_file_string(tag_dir + "/" + name) {
+      Some(sha_raw) => {
+        let sha = sha_raw.trim_start(chars=" \n\r\t").trim_end(chars=" \n\r\t").to_string()
+        store.set_string("git/tags/" + name, "sha=" + sha + "\nmessage=" + name)
+      }
+      None => ()
+    }
+  }
+}
+
+///|
 extern "js" fn read_file_string(path : String) -> String? =
   #| (path) => {
   #|   try {
