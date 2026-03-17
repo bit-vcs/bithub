@@ -16,6 +16,8 @@ fn get_app(env : @mars.JsEnv) -> @mars.Server {
         if api.resolve_token("tok-owner-001") is None {
           r2.set_string("auth/tokens/tok-owner-001", "identity=admin\nrole=owner")
           r2.set_string("auth/tokens/tok-write-001", "identity=ci-bot\nrole=write")
+          r2.set_string("auth/tokens/tok-alice", "identity=agent-alice\nrole=owner")
+          r2.set_string("auth/tokens/tok-bob", "identity=agent-bob\nrole=write")
         }
         @mars_http.create_app_with_storage(api)
       } else {
