@@ -319,3 +319,70 @@ fn scan_files_recursive(
     }
   }
 }
+
+///|
+/// Load issues from relay API poll response into Storage.
+/// `envelopes_json` is the full poll response JSON string.
+pub fn load_relay_issues_into_storage(
+  store : &Storage,
+  envelopes_json : String,
+) -> Int {
+  let parsed = try { @json.parse(envelopes_json) } catch { _ => return 0 }
+  let top = match parsed {
+    Object(obj) => obj
+    _ => return 0
+  }
+  let arr = match top.get("envelopes") {
+    Some(Array(items)) => items
+    _ => return 0
+  }
+  let mut count = 0
+  for item in arr {
+    let envelope = match item {
+      Object(obj) => obj
+      _ => continue
+    }
+    let payload = match envelope.get("payload") {
+      Some(Object(p)) => p
+      _ => continue
+    }
+    let kind = match payload.get("kind") {
+      Some(String(k)) => k
+      _ => continue
+    }
+    if kind != "hub.record" {
+      continue
+    }
+    let record_str = match payload.get("record") {
+      Some(String(r)) => r
+      _ => continue
+    }
+    // Parse hub record → WorkItem → Issue
+    let record = @hub.parse_hub_record(record_str)
+    let work_item = @hub.parse_work_item(record.payload) catch { _ => continue }
+    let issue = match work_item.to_issue() {
+      Some(i) => i
+      None => continue
+    }
+    let id = issue.id
+    let state_str = match issue.state {
+      @hub.IssueState::Open => "open"
+      @hub.IssueState::Closed => "closed"
+    }
+    let meta = [
+      "title=" + issue.title,
+      "state=" + state_str,
+      "author=" + issue.author,
+      "created_at=" + issue.created_at.to_string(),
+    ].join("\n")
+    store.set_string("issues/" + id + "/meta", meta)
+    if issue.body.length() > 0 {
+      store.set_string("issues/" + id + "/body", issue.body)
+    }
+    if issue.labels.length() > 0 {
+      store.set_string("issues/" + id + "/labels", issue.labels.join(","))
+    }
+    count += 1
+  }
+  count
+}
