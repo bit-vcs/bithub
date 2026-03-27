@@ -934,45 +934,75 @@ fn render_layout(
     #|.wf-table{width:100%;border-collapse:collapse;}.wf-table th,.wf-table td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--border);}.wf-table th{font-weight:600;}
     #|@media (max-width: 760px){body{padding:64px 10px 12px;height:auto;}main{min-height:auto;}footer{position:static;margin-top:12px;padding:8px 0 0;border-top:none;}}
   let terminal_css =
-    #|#terminal-panel{display:none;position:fixed;bottom:0;left:0;right:0;height:40vh;z-index:100;background:#0d1117;border-top:2px solid #30363d;font-family:ui-monospace,Menlo,monospace;font-size:14px;color:#c9d1d9;overflow:hidden;}
+    #|#terminal-panel{display:none;position:fixed;bottom:0;left:0;right:0;height:40vh;z-index:100;background:#0d1117;border-top:2px solid #30363d;overflow:hidden;}
     #|#terminal-panel.open{display:flex;flex-direction:column;}
-    #|#terminal-bar{display:flex;justify-content:space-between;align-items:center;padding:4px 12px;background:#161b22;border-bottom:1px solid #30363d;font-size:12px;color:#8b949e;}
+    #|#terminal-bar{display:flex;justify-content:space-between;align-items:center;padding:4px 12px;background:#161b22;border-bottom:1px solid #30363d;font-size:12px;color:#8b949e;font-family:ui-monospace,Menlo,monospace;}
     #|#terminal-bar button{background:none;border:none;color:#8b949e;cursor:pointer;font-size:14px;}
-    #|#terminal-output{flex:1;overflow-y:auto;padding:8px 12px;white-space:pre-wrap;word-break:break-all;}
-    #|#terminal-input-line{display:flex;align-items:center;padding:4px 12px;background:#161b22;border-top:1px solid #30363d;}
-    #|#terminal-prompt{color:#58a6ff;margin-right:8px;}
-    #|#terminal-input{flex:1;background:none;border:none;color:#c9d1d9;font-family:inherit;font-size:14px;outline:none;}
-    #|.term-info{color:#8b949e;}.term-ok{color:#3fb950;}.term-err{color:#f85149;}
+    #|#terminal-container{flex:1;overflow:hidden;}
   let terminal_js =
-    #|<div id="terminal-panel"><div id="terminal-bar"><span>Terminal</span><button onclick="toggleTerminal()">✕</button></div><div id="terminal-output"></div><div id="terminal-input-line"><span id="terminal-prompt">$</span><input id="terminal-input" autofocus placeholder="Type a command..." /></div></div>
-    #|<script>
-    #|const termPanel=document.getElementById('terminal-panel');
-    #|const termOutput=document.getElementById('terminal-output');
-    #|const termInput=document.getElementById('terminal-input');
-    #|function toggleTerminal(){termPanel.classList.toggle('open');if(termPanel.classList.contains('open'))termInput.focus();}
-    #|document.addEventListener('keydown',e=>{if(e.key==='`'&&e.ctrlKey){e.preventDefault();toggleTerminal();}});
-    #|function termWrite(text,cls){const d=document.createElement('div');d.textContent=text;if(cls)d.className=cls;termOutput.appendChild(d);termOutput.scrollTop=termOutput.scrollHeight;}
-    #|function termClear(){termOutput.innerHTML='';}
-    #|termWrite('bithub terminal v0.1 — Ctrl-` to toggle','term-info');
-    #|termWrite('Type "help" for available commands.\n','term-info');
-    #|const CMDS={
-    #|  help:()=>termWrite('Commands: help, clear, init <owner/repo>, issues, activity, participants, repo','term-info'),
-    #|  clear:()=>termClear(),
-    #|  repo:async()=>{const r=await fetch('/api/init',{method:'HEAD'}).catch(()=>null);const m=await fetch('/_meta/repo').then(r=>r.ok?r.json():null).catch(()=>null);termWrite(m?JSON.stringify(m,null,2):'No repo initialized','term-info');},
-    #|  issues:async()=>{const r=await fetch('/issues');termWrite(r.ok?'See /issues page':'Failed','term-info');},
-    #|  participants:async(args)=>{const repo=args[0]||'';const r=await fetch('/api/participants?repo='+repo);const d=await r.json().catch(()=>({}));const ps=d.participants||[];termWrite(ps.length?ps.map(p=>p.participant_id+' ('+p.status+')').join('\n'):'No active participants','term-info');},
-    #|  activity:async(args)=>{const repo=args[0]||'';const r=await fetch('/api/activity?repo='+repo);const d=await r.json().catch(()=>({}));const es=d.envelopes||[];es.forEach(e=>termWrite('['+e.sender+'] '+e.topic+' '+e.id));if(!es.length)termWrite('No recent activity','term-info');},
-    #|  init:async(args)=>{if(!args[0])return termWrite('Usage: init owner/repo','term-err');termWrite('Initializing '+args[0]+'...','term-info');const r=await fetch('/api/init?repo='+args[0],{method:'POST'});const d=await r.json().catch(()=>({}));termWrite(d.ok?'OK: '+d.files+' files loaded':'Error: '+(d.error||'unknown'),'term-'+(d.ok?'ok':'err'));},
+    #|<div id="terminal-panel"><div id="terminal-bar"><span>Terminal <small id="terminal-status"></small></span><button onclick="toggleTerminal()">✕</button></div><div id="terminal-container"></div></div>
+    #|<script type="module">
+    #|const panel=document.getElementById('terminal-panel');
+    #|const container=document.getElementById('terminal-container');
+    #|const status=document.getElementById('terminal-status');
+    #|let term=null,resttyLoaded=false;
+    #|
+    #|async function ensureRestty(){
+    #|  if(resttyLoaded)return true;
+    #|  status.textContent='loading restty...';
+    #|  try{
+    #|    const{Restty,getBuiltinTheme}=await import('https://esm.sh/restty@0.1.34');
+    #|    term=new Restty({root:container});
+    #|    const theme=getBuiltinTheme('Aizen Dark');
+    #|    if(theme)term.applyTheme(theme);
+    #|    resttyLoaded=true;
+    #|    status.textContent='';
+    #|    // Wire up command handling
+    #|    let line='';
+    #|    term.writeln('\x1b[36mbithub terminal v0.2 — powered by restty\x1b[0m');
+    #|    term.writeln('\x1b[90mType "help" for commands. Ctrl-` to toggle.\x1b[0m');
+    #|    term.write('\r\n\x1b[34m$ \x1b[0m');
+    #|    term.onData(async(data)=>{
+    #|      if(data==='\r'||data==='\n'){
+    #|        term.write('\r\n');
+    #|        if(line.trim())await runCmd(line.trim());
+    #|        line='';
+    #|        term.write('\x1b[34m$ \x1b[0m');
+    #|      }else if(data==='\x7f'){
+    #|        if(line.length>0){line=line.slice(0,-1);term.write('\b \b');}
+    #|      }else if(data.charCodeAt(0)>=32){
+    #|        line+=data;term.write(data);
+    #|      }
+    #|    });
+    #|    return true;
+    #|  }catch(e){
+    #|    status.textContent='restty failed: '+e.message;
+    #|    console.error('restty load failed',e);
+    #|    return false;
+    #|  }
+    #|}
+    #|
+    #|async function runCmd(input){
+    #|  const[cmd,...args]=input.split(/\s+/);
+    #|  const CMDS={
+    #|    help:()=>term.writeln('\x1b[90mCommands: help, clear, init <owner/repo>, issues, activity, participants, repo\x1b[0m'),
+    #|    clear:()=>term.clear(),
+    #|    repo:async()=>{try{const r=await fetch('/_meta/repo');const m=await r.json();term.writeln(JSON.stringify(m,null,2));}catch{term.writeln('\x1b[31mNo repo initialized\x1b[0m');}},
+    #|    issues:()=>{window.location.href='/issues';},
+    #|    participants:async()=>{const repo=args[0]||'';const r=await fetch('/api/participants?repo='+repo);const d=await r.json().catch(()=>({}));const ps=d.participants||[];if(ps.length)ps.forEach(p=>term.writeln(p.participant_id+' ('+p.status+')'));else term.writeln('\x1b[90mNo active participants\x1b[0m');},
+    #|    activity:async()=>{const repo=args[0]||'';const r=await fetch('/api/activity?repo='+repo);const d=await r.json().catch(()=>({}));const es=d.envelopes||[];if(es.length)es.forEach(e=>term.writeln('['+e.sender+'] '+e.topic+' '+e.id));else term.writeln('\x1b[90mNo recent activity\x1b[0m');},
+    #|    init:async()=>{if(!args[0])return term.writeln('\x1b[31mUsage: init owner/repo\x1b[0m');term.writeln('\x1b[90mInitializing '+args[0]+'...\x1b[0m');const r=await fetch('/api/init?repo='+args[0],{method:'POST'});const d=await r.json().catch(()=>({}));term.writeln(d.ok?'\x1b[32mOK: '+d.files+' files loaded\x1b[0m':'\x1b[31mError: '+(d.error||'unknown')+'\x1b[0m');},
+    #|  };
+    #|  if(CMDS[cmd])await CMDS[cmd]();
+    #|  else term.writeln('\x1b[31mUnknown: '+cmd+'. Type "help".\x1b[0m');
+    #|}
+    #|
+    #|window.toggleTerminal=async function(){
+    #|  const opening=!panel.classList.contains('open');
+    #|  panel.classList.toggle('open');
+    #|  if(opening)await ensureRestty();
     #|};
-    #|termInput.addEventListener('keydown',async e=>{
-    #|  if(e.key!=='Enter')return;
-    #|  const line=termInput.value.trim();termInput.value='';
-    #|  if(!line)return;
-    #|  termWrite('$ '+line);
-    #|  const[cmd,...args]=line.split(/\s+/);
-    #|  if(CMDS[cmd])await CMDS[cmd](args);
-    #|  else termWrite('Unknown command: '+cmd+'. Type "help".','term-err');
-    #|});
+    #|document.addEventListener('keydown',e=>{if(e.key==='`'&&e.ctrlKey){e.preventDefault();toggleTerminal();}});
     #|</script>
   let head = "<meta charset=\"utf-8\"><style>" + css + terminal_css + "</style>"
   @sol.render_page(page, title~, head~) + terminal_js
