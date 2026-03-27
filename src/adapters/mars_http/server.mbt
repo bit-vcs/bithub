@@ -1377,9 +1377,9 @@ fn render_layout(
     #|  cat:async(a)=>{
     #|    if(!a[0])return tw('Usage: cat <file-path>','t-err');
     #|    tw('Reading '+a[0]+'...','t-info');
-    #|    const cached=await cacheGet('file:'+a[0]);
+    #|    const cached=await cacheGet(a[0]);
     #|    if(cached){tw('[cache hit]','t-info');tw(cached.length>2000?cached.slice(0,2000)+'...(truncated)':cached);}
-    #|    else{const r=await fetch('/file?path='+encodeURIComponent(a[0]));if(r.ok){const t=await r.text();const plain=t.replace(/<[^>]*>/g,'').slice(0,2000);await cachePut('file:'+a[0],plain);tw(plain);}else tw('Not found: '+a[0],'t-err');}
+    #|    else{const r=await fetch('/file?path='+encodeURIComponent(a[0]));if(r.ok){const t=await r.text();const plain=t.replace(/<[^>]*>/g,'').slice(0,2000);await cachePut(a[0],plain);tw(plain);}else tw('Not found: '+a[0],'t-err');}
     #|  },
     #|  ls:async(a)=>{
     #|    const prefix='file:'+(a[0]?a[0]+'/':'');
@@ -1406,7 +1406,7 @@ fn render_layout(
     #|      for(const e of (tr.tree||[]).slice(0,200)){
     #|        if(e.type!=='blob'||e.size>50000)continue;
     #|        try{const b=await(await fetch(gh+'/git/blobs/'+e.sha)).json();
-    #|          if(b.encoding==='base64'){const bin=Uint8Array.from(atob(b.content.replace(/\n/g,'')),c=>c.charCodeAt(0));await cachePut('file:'+e.path,new TextDecoder().decode(bin));n++;}
+    #|          if(b.encoding==='base64'){const bin=Uint8Array.from(atob(b.content.replace(/\n/g,'')),c=>c.charCodeAt(0));await cachePut(e.path,new TextDecoder().decode(bin));n++;}
     #|        }catch{}
     #|      }
     #|      tw('IndexedDB: '+n+' files cached','t-ok');
