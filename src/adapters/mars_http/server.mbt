@@ -879,20 +879,76 @@ fn render_readme_page(api : @core.ApiState, workspace~ : String = "") -> String 
 
 ///|
 fn render_filer_page(api : @core.ApiState, raw_path : String, workspace~ : String = "") -> String {
+  // Workspace filer: client-side from IndexedDB
+  if workspace.length() > 0 {
+    let prefix = "/workspace/" + workspace
+    let filer_js =
+      #|<script>
+      #|const DB_NAME='bithub-blobs',DB_VER=1,STORE='blobs';
+      #|function openDB(){return new Promise((ok,ng)=>{const r=indexedDB.open(DB_NAME,DB_VER);r.onupgradeneeded=()=>r.result.createObjectStore(STORE);r.onsuccess=()=>ok(r.result);r.onerror=()=>ng(r.error);});}
+      #|async function idbKeys(pfx){const db=await openDB();return new Promise(ok=>{const r=db.transaction(STORE).objectStore(STORE).getAllKeys();r.onsuccess=()=>ok((r.result||[]).filter(k=>typeof k==='string'&&k.startsWith(pfx)));r.onerror=()=>ok([]);});}
+      #|
+      #|async function renderFiler(){
+      #|  const params=new URLSearchParams(location.search);
+      #|  const path=params.get('path')||'';
+      #|  const prefix=path?'file:'+path+'/':'file:';
+      #|  const allKeys=await idbKeys('file:');
+      #|  // Build directory listing for current path
+      #|  const seen=new Set();
+      #|  const entries=[];
+      #|  for(const k of allKeys){
+      #|    const rel=k.slice('file:'.length);
+      #|    if(path&&!rel.startsWith(path+'/'))continue;
+      #|    if(!path&&rel.includes('/')===false){entries.push({name:rel,path:rel,isDir:false});continue;}
+      #|    const sub=path?rel.slice(path.length+1):rel;
+      #|    const slash=sub.indexOf('/');
+      #|    if(slash<0){entries.push({name:sub,path:rel,isDir:false});}
+      #|    else{const dir=sub.slice(0,slash);const dirPath=path?path+'/'+dir:dir;if(!seen.has(dirPath)){seen.add(dirPath);entries.push({name:dir,path:dirPath,isDir:true});}}
+      #|  }
+      #|  entries.sort((a,b)=>(a.isDir===b.isDir?a.name.localeCompare(b.name):(a.isDir?-1:1)));
+      #|  const wsPrefix=document.body.dataset.wsPrefix;
+      #|  const ul=document.getElementById('filer-list');
+      #|  const pathEl=document.getElementById('filer-path');
+      #|  pathEl.textContent='path: '+(path?'/'+path:'/');
+      #|  ul.innerHTML='';
+      #|  if(entries.length===0){ul.innerHTML='<li>(empty)</li>';return;}
+      #|  for(const e of entries){
+      #|    const li=document.createElement('li');
+      #|    const a=document.createElement('a');
+      #|    a.href=e.isDir?wsPrefix+'/filer?path='+encodeURIComponent(e.path):wsPrefix+'/file?path='+encodeURIComponent(e.path);
+      #|    a.textContent=e.isDir?'[dir] '+e.name+'/':'[file] '+e.name;
+      #|    li.appendChild(a);ul.appendChild(li);
+      #|  }
+      #|}
+      #|document.addEventListener('DOMContentLoaded',renderFiler);
+      #|</script>
+    return render_layout(
+      "filer",
+      [
+        @luna.h("h1", [], [@luna.text("filer")]),
+        @luna.h("p", [("id", @luna.attr_static("filer-path"))], [
+          @luna.text("path: /"),
+        ]),
+        @luna.h("ul", [("id", @luna.attr_static("filer-list"))], [
+          @luna.h("li", [], [@luna.text("loading...")]),
+        ]),
+        @luna.raw_html(
+          "<script>document.body.dataset.wsPrefix='" + prefix + "';</script>",
+        ),
+      ],
+      workspace~,
+    ) + filer_js
+  }
+  // Non-workspace filer: server-rendered from R2
   let path = normalize_path(raw_path)
   let entries = api.list_entries(path)
   let display_path = if path.length() == 0 { "/" } else { "/" + path }
-  let prefix = if workspace.length() > 0 {
-    "/workspace/" + workspace
-  } else {
-    ""
-  }
   let list_nodes : Array[@luna.Node[Unit, String]] = []
   for entry in entries {
     let href = if entry.is_dir {
-      prefix + "/filer?path=" + entry.path
+      "/filer?path=" + entry.path
     } else {
-      prefix + "/file?path=" + entry.path
+      "/file?path=" + entry.path
     }
     let suffix = if entry.is_dir { "/" } else { "" }
     let label = if entry.is_dir {
@@ -916,6 +972,48 @@ fn render_filer_page(api : @core.ApiState, raw_path : String, workspace~ : Strin
 
 ///|
 fn render_file_page(api : @core.ApiState, raw_path : String, workspace~ : String = "") -> PageHtml {
+  // Workspace file: client-side from IndexedDB
+  if workspace.length() > 0 {
+    let prefix = "/workspace/" + workspace
+    let file_js =
+      #|<script>
+      #|const DB_NAME='bithub-blobs',DB_VER=1,STORE='blobs';
+      #|function openDB(){return new Promise((ok,ng)=>{const r=indexedDB.open(DB_NAME,DB_VER);r.onupgradeneeded=()=>r.result.createObjectStore(STORE);r.onsuccess=()=>ok(r.result);r.onerror=()=>ng(r.error);});}
+      #|async function idbGet(k){const db=await openDB();return new Promise(ok=>{const r=db.transaction(STORE).objectStore(STORE).get(k);r.onsuccess=()=>ok(r.result??null);r.onerror=()=>ok(null);});}
+      #|
+      #|async function renderFile(){
+      #|  const params=new URLSearchParams(location.search);
+      #|  const path=params.get('path')||'';
+      #|  document.getElementById('file-title').textContent=path||'file';
+      #|  const content=await idbGet('file:'+path);
+      #|  const el=document.getElementById('file-content');
+      #|  if(content===null){el.textContent='not found (not in local cache)';return;}
+      #|  if(path.endsWith('.md')){el.innerHTML='<em>Markdown preview not available client-side</em><pre class="source-code"><code>'+escHtml(content)+'</code></pre>';}
+      #|  else{el.innerHTML='<pre class="source-code"><code>'+escHtml(content)+'</code></pre>';}
+      #|}
+      #|function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+      #|document.addEventListener('DOMContentLoaded',renderFile);
+      #|</script>
+    return {
+      status: 200,
+      html: render_layout(
+        "file",
+        [
+          @luna.h("h1", [("id", @luna.attr_static("file-title"))], [
+            @luna.text("loading..."),
+          ]),
+          @luna.h("div", [("id", @luna.attr_static("file-content"))], [
+            @luna.text("loading..."),
+          ]),
+          @luna.raw_html(
+            "<script>document.body.dataset.wsPrefix='" + prefix + "';</script>",
+          ),
+        ],
+        workspace~,
+      ) + file_js,
+    }
+  }
+  // Non-workspace file: server-rendered from R2
   let result = api.lookup_file(raw_path)
   match result.content {
     Some(content) => {

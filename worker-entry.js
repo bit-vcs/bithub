@@ -61,10 +61,16 @@ async function preloadForRoute(env, pathname) {
 
   // Strip /workspace/{id} prefix for route matching
   let routePath = pathname;
-  if (pathname.startsWith("/workspace/")) {
+  const isWorkspace = pathname.startsWith("/workspace/");
+  if (isWorkspace) {
     const rest = pathname.slice("/workspace/".length);
     const slash = rest.indexOf("/");
     routePath = slash >= 0 ? rest.slice(slash) : "/filer";
+  }
+
+  // Workspace filer/file are client-side only (IndexedDB) — skip R2 preload
+  if (isWorkspace && (routePath.startsWith("/filer") || routePath.startsWith("/file"))) {
+    return; // no R2 data needed
   }
 
   // Route-based prefixes
