@@ -955,16 +955,71 @@ fn render_layout(
     #|function toggleTerminal(){P.classList.toggle('open');if(P.classList.contains('open')){I.focus();}}
     #|document.addEventListener('keydown',e=>{if(e.key==='`'&&e.ctrlKey){e.preventDefault();toggleTerminal();}});
     #|function tw(t,c){const d=document.createElement('div');d.textContent=t;if(c)d.className=c;O.appendChild(d);O.scrollTop=1e9;}
+    #|
+    #|// --- IndexedDB blob cache ---
+    #|const DB_NAME='bithub-blobs',DB_VER=1,STORE='blobs';
+    #|function openDB(){return new Promise((ok,ng)=>{const r=indexedDB.open(DB_NAME,DB_VER);r.onupgradeneeded=()=>r.result.createObjectStore(STORE);r.onsuccess=()=>ok(r.result);r.onerror=()=>ng(r.error);});}
+    #|async function cacheGet(key){const db=await openDB();return new Promise(ok=>{const tx=db.transaction(STORE);const r=tx.objectStore(STORE).get(key);r.onsuccess=()=>ok(r.result??null);r.onerror=()=>ok(null);});}
+    #|async function cachePut(key,val){const db=await openDB();return new Promise(ok=>{const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).put(val,key);tx.oncomplete=()=>ok();tx.onerror=()=>ok();});}
+    #|async function cacheKeys(prefix){const db=await openDB();return new Promise(ok=>{const tx=db.transaction(STORE);const r=tx.objectStore(STORE).getAllKeys();r.onsuccess=()=>ok((r.result||[]).filter(k=>typeof k==='string'&&k.startsWith(prefix)));r.onerror=()=>ok([]);});}
+    #|async function cacheClear(){const db=await openDB();return new Promise(ok=>{const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).clear();tx.oncomplete=()=>ok();tx.onerror=()=>ok();});}
+    #|
+    #|// Cache-first file fetch: IndexedDB → server
+    #|async function cachedFile(path){
+    #|  const cached=await cacheGet('file:'+path);
+    #|  if(cached)return cached;
+    #|  const r=await fetch('/file?path='+encodeURIComponent(path));
+    #|  if(!r.ok)return null;
+    #|  const text=await r.text();
+    #|  await cachePut('file:'+path,text);
+    #|  return text;
+    #|}
+    #|
     #|tw('bithub terminal — Ctrl-` to toggle','t-info');
     #|tw('Type "help" for commands.','t-info');
     #|const C={
-    #|  help:()=>tw('Commands: help, clear, init <owner/repo>, issues, activity, participants, repo','t-info'),
+    #|  help:()=>tw('Commands: help, clear, init <owner/repo>, cat <path>, ls [path], cache, cache-clear, issues, activity, participants, repo','t-info'),
     #|  clear:()=>{O.innerHTML='';},
     #|  repo:async()=>{try{const r=await(await fetch('/_meta/repo')).json();tw(JSON.stringify(r,null,2),'t-info');}catch{tw('No repo initialized','t-err');}},
     #|  issues:()=>{window.open('/issues','_blank');tw('Opened /issues','t-info');},
+    #|  cat:async(a)=>{
+    #|    if(!a[0])return tw('Usage: cat <file-path>','t-err');
+    #|    tw('Reading '+a[0]+'...','t-info');
+    #|    const cached=await cacheGet('file:'+a[0]);
+    #|    if(cached){tw('[cache hit]','t-info');tw(cached.length>2000?cached.slice(0,2000)+'...(truncated)':cached);}
+    #|    else{const r=await fetch('/file?path='+encodeURIComponent(a[0]));if(r.ok){const t=await r.text();const plain=t.replace(/<[^>]*>/g,'').slice(0,2000);await cachePut('file:'+a[0],plain);tw(plain);}else tw('Not found: '+a[0],'t-err');}
+    #|  },
+    #|  ls:async(a)=>{
+    #|    const prefix='file:'+(a[0]?a[0]+'/':'');
+    #|    const keys=await cacheKeys(prefix);
+    #|    if(keys.length){keys.forEach(k=>tw(k.replace('file:','')));tw(keys.length+' file(s) in cache','t-info');}
+    #|    else tw('No files cached. Run "init owner/repo" first.','t-info');
+    #|  },
+    #|  cache:async()=>{const keys=await cacheKeys('');tw(keys.length+' entries in IndexedDB cache','t-info');},
+    #|  'cache-clear':async()=>{await cacheClear();tw('Cache cleared','t-ok');},
     #|  participants:async(a)=>{const r=await(await fetch('/api/participants?repo='+(a[0]||''))).json().catch(()=>({}));const p=r.participants||[];p.length?p.forEach(x=>tw(x.participant_id+' ('+x.status+')')):tw('No active participants','t-info');},
     #|  activity:async(a)=>{const r=await(await fetch('/api/activity?repo='+(a[0]||''))).json().catch(()=>({}));const e=r.envelopes||[];e.length?e.forEach(x=>tw('['+x.sender+'] '+x.topic+' '+x.id)):tw('No recent activity','t-info');},
-    #|  init:async(a)=>{if(!a[0])return tw('Usage: init owner/repo','t-err');tw('Initializing '+a[0]+'...','t-info');const r=await(await fetch('/api/init?repo='+a[0],{method:'POST'})).json().catch(()=>({}));tw(r.ok?'OK: '+r.files+' files':'Error: '+(r.error||'?'),r.ok?'t-ok':'t-err');},
+    #|  init:async(a)=>{
+    #|    if(!a[0])return tw('Usage: init owner/repo','t-err');
+    #|    tw('Initializing '+a[0]+' (server + local cache)...','t-info');
+    #|    const r=await(await fetch('/api/init?repo='+a[0],{method:'POST'})).json().catch(()=>({}));
+    #|    if(!r.ok)return tw('Error: '+(r.error||'?'),'t-err');
+    #|    tw('Server: '+r.files+' files loaded to R2','t-ok');
+    #|    // Cache files locally in IndexedDB via GitHub API
+    #|    tw('Caching to IndexedDB...','t-info');
+    #|    const gh='https://api.github.com/repos/'+a[0];
+    #|    try{
+    #|      const tr=await(await fetch(gh+'/git/trees/'+(r.default_branch||'main')+'?recursive=1')).json();
+    #|      let n=0;
+    #|      for(const e of (tr.tree||[]).slice(0,200)){
+    #|        if(e.type!=='blob'||e.size>50000)continue;
+    #|        try{const b=await(await fetch(gh+'/git/blobs/'+e.sha)).json();
+    #|          if(b.encoding==='base64'){const bin=Uint8Array.from(atob(b.content.replace(/\n/g,'')),c=>c.charCodeAt(0));await cachePut('file:'+e.path,new TextDecoder().decode(bin));n++;}
+    #|        }catch{}
+    #|      }
+    #|      tw('IndexedDB: '+n+' files cached','t-ok');
+    #|    }catch(e){tw('IndexedDB cache failed: '+e.message,'t-err');}
+    #|  },
     #|};
     #|I.addEventListener('keydown',async e=>{
     #|  if(e.key==='Enter'&&!e.isComposing){const v=I.value.trim();I.value='';if(!v)return;tw('$ '+v,'t-cmd');const[c,...a]=v.split(/\s+/);C[c]?await C[c](a):tw('Unknown: '+c+'. Type "help".','t-err');}
