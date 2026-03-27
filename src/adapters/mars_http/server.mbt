@@ -650,23 +650,58 @@ priv struct PageHtml {
 
 ///|
 fn render_home_page() -> String {
+  let home_css =
+    #|.landing{max-width:600px;margin:40px auto;}
+    #|.landing h1{font-size:28px;margin-bottom:8px;}
+    #|.landing p{color:#8b949e;margin-bottom:24px;}
+    #|.ws-form{display:flex;flex-direction:column;gap:12px;background:var(--pre);padding:20px;border-radius:8px;border:1px solid var(--border);}
+    #|.ws-form label{font-size:13px;color:#8b949e;}
+    #|.ws-form input{padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:14px;font-family:inherit;}
+    #|.ws-form button{padding:10px 16px;background:#238636;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-weight:600;}
+    #|.ws-form button:hover{background:#2ea043;}
+    #|.ws-recent{margin-top:24px;}.ws-recent h3{font-size:14px;color:#8b949e;margin-bottom:8px;}
+    #|.ws-recent a{display:block;padding:6px 0;color:var(--link);text-decoration:none;}.ws-recent a:hover{text-decoration:underline;}
+  let home_js =
+    #|<script>
+    #|const WS_KEY='bithub_workspaces';
+    #|function getWorkspaces(){try{return JSON.parse(localStorage.getItem(WS_KEY)||'[]');}catch{return [];}}
+    #|function saveWorkspace(ws){const all=getWorkspaces().filter(w=>w.id!==ws.id);all.unshift(ws);localStorage.setItem(WS_KEY,JSON.stringify(all.slice(0,10)));}
+    #|function renderRecent(){const el=document.getElementById('ws-recent-list');if(!el)return;const ws=getWorkspaces();el.innerHTML='';ws.forEach(w=>{const a=document.createElement('a');a.href='/filer?ws='+w.id;a.textContent=w.repo+' — '+w.user+' ('+new Date(w.created).toLocaleDateString()+')';el.appendChild(a);});}
+    #|document.addEventListener('DOMContentLoaded',renderRecent);
+    #|async function createWorkspace(e){
+    #|  e.preventDefault();
+    #|  const user=document.getElementById('ws-user').value.trim();
+    #|  const repo=document.getElementById('ws-repo').value.trim();
+    #|  if(!user||!repo)return alert('Please fill in both fields');
+    #|  const btn=e.target.querySelector('button');btn.disabled=true;btn.textContent='Creating...';
+    #|  const id=repo.replace(/\//g,'-')+'-'+Date.now().toString(36);
+    #|  try{
+    #|    const r=await(await fetch('/api/init?repo='+repo,{method:'POST'})).json();
+    #|    if(!r.ok){btn.textContent='Error: '+(r.error||'?');btn.disabled=false;return;}
+    #|    saveWorkspace({id,user,repo,created:Date.now(),files:r.files});
+    #|    localStorage.setItem('bithub_user',user);
+    #|    window.location.href='/filer';
+    #|  }catch(err){btn.textContent='Failed';btn.disabled=false;}
+    #|}
+    #|window.addEventListener('DOMContentLoaded',()=>{const u=localStorage.getItem('bithub_user');if(u)document.getElementById('ws-user').value=u;});
+    #|</script>
   render_layout("bithub", [
-    @luna.h("h1", [], [@luna.text("bithub")]),
-    @luna.h("p", [], [@luna.text("minimal github-like interface backed by bit kv.")]),
-    @luna.h("ul", [], [
-      @luna.h("li", [], [@components.link("/readme", [@luna.text("README.md")])]),
-      @luna.h("li", [], [@components.link("/filer", [@luna.text("files")])]),
-      @luna.h("li", [], [
-        @components.link("/commits", [@luna.text("commits")]),
-      ]),
-      @luna.h("li", [], [
-        @components.link("/branches", [@luna.text("branches")]),
-      ]),
-      @luna.h("li", [], [
-        @components.link("/actions/workflows", [@luna.text("workflows")]),
-      ]),
-    ]),
-  ])
+    @luna.raw_html("<style>" + home_css + "</style>"),
+    @luna.raw_html(
+      #|<div class="landing">
+      #|<h1>bithub</h1>
+      #|<p>Open a GitHub repository to browse, review, and collaborate.</p>
+      #|<form class="ws-form" onsubmit="createWorkspace(event)">
+      #|  <label>Your name</label>
+      #|  <input id="ws-user" placeholder="e.g. mizchi" required />
+      #|  <label>Repository (owner/repo)</label>
+      #|  <input id="ws-repo" placeholder="e.g. bit-vcs/bit-relay" required />
+      #|  <button type="submit">Open workspace</button>
+      #|</form>
+      #|<div class="ws-recent"><h3>Recent workspaces</h3><div id="ws-recent-list"></div></div>
+      #|</div>
+    ),
+  ]) + home_js
 }
 
 ///|
