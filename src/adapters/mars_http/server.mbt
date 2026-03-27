@@ -961,15 +961,16 @@ fn render_layout(
     #|    term.writeln('\x1b[90mType "help" for commands. Ctrl-` to toggle.\x1b[0m');
     #|    term.write('\r\n\x1b[34m$ \x1b[0m');
     #|    term.onData(async(data)=>{
-    #|      if(data==='\r'||data==='\n'){
-    #|        term.write('\r\n');
-    #|        if(line.trim())await runCmd(line.trim());
-    #|        line='';
-    #|        term.write('\x1b[34m$ \x1b[0m');
-    #|      }else if(data==='\x7f'){
-    #|        if(line.length>0){line=line.slice(0,-1);term.write('\b \b');}
-    #|      }else if(data.charCodeAt(0)>=32){
-    #|        line+=data;term.write(data);
+    #|      for(const ch of data){
+    #|        if(ch==='\r'||ch==='\n'){
+    #|          if(line.trim())await runCmd(line.trim());
+    #|          line='';
+    #|          term.write('\r\n\x1b[34m$ \x1b[0m');
+    #|        }else if(ch==='\x7f'){
+    #|          if(line.length>0){line=line.slice(0,-1);}
+    #|        }else if(ch.charCodeAt(0)>=32){
+    #|          line+=ch;
+    #|        }
     #|      }
     #|    });
     #|    return true;
