@@ -9,6 +9,10 @@ enabled = true
 binding = "BITHUB_STORE"
 bucket_name = "bithub-store"
 
+[[services]]
+binding = "BIT_RELAY"
+service = "bit-relay"
+
 # Cloudflare Containers for CI job execution
 # Enable when orchestrator API is ready:
 # [[containers.apps]]

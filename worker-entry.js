@@ -162,10 +162,160 @@ async function flushR2(env) {
   globalThis.__r2_dirty = {};
 }
 
+// ---- GitHub API helpers for repo initialization ----
+// Use env var or default; workers.dev → workers.dev subrequests may
+// need a custom domain to avoid Cloudflare's same-zone restrictions.
+function relayBase(env) {
+  return env?.BIT_RELAY_URL || "https://bit-relay.mizchi.workers.dev";
+}
+
+async function handleApiInit(request, env) {
+  const url = new URL(request.url);
+  const repo = url.searchParams.get("repo"); // owner/repo
+  if (!repo || !repo.includes("/")) {
+    return Response.json({ error: "missing ?repo=owner/repo" }, { status: 400 });
+  }
+  const bucket = env.BITHUB_STORE;
+  if (!bucket) {
+    return Response.json({ error: "R2 not configured" }, { status: 503 });
+  }
+
+  const [owner, name] = repo.split("/");
+  const ghApi = `https://api.github.com/repos/${owner}/${name}`;
+  const headers = { "User-Agent": "bithub/0.1", Accept: "application/vnd.github.v3+json" };
+  const ghToken = env.GITHUB_TOKEN;
+  if (ghToken) headers.Authorization = `token ${ghToken}`;
+
+  try {
+    // 1. Get default branch
+    const repoRes = await fetch(ghApi, { headers });
+    if (!repoRes.ok) {
+      const body = await repoRes.text();
+      return Response.json({ error: `GitHub: ${repoRes.status}`, body: body.slice(0, 200) }, { status: 502 });
+    }
+    const repoData = await repoRes.json();
+    const defaultBranch = repoData.default_branch || "main";
+
+    // 2. Get tree (recursive)
+    const treeRes = await fetch(`${ghApi}/git/trees/${defaultBranch}?recursive=1`, { headers });
+    if (!treeRes.ok) return Response.json({ error: `GitHub tree: ${treeRes.status}` }, { status: 502 });
+    const treeData = await treeRes.json();
+
+    // 3. Store tree metadata
+    let fileCount = 0;
+    const MAX_FILES = 100;
+    const MAX_FILE_SIZE = 100_000; // 100KB
+
+    for (const entry of treeData.tree || []) {
+      if (entry.type !== "blob" || fileCount >= MAX_FILES) continue;
+      if (entry.size > MAX_FILE_SIZE) continue;
+
+      // Fetch file content
+      try {
+        const blobRes = await fetch(`${ghApi}/git/blobs/${entry.sha}`, { headers });
+        if (!blobRes.ok) continue;
+        const blobData = await blobRes.json();
+        const content = blobData.encoding === "base64"
+          ? atob(blobData.content.replace(/\n/g, ""))
+          : blobData.content;
+        await bucket.put(entry.path, content);
+        fileCount++;
+      } catch { /* skip individual file errors */ }
+    }
+
+    // 4. Store repo metadata
+    await bucket.put("_meta/repo", JSON.stringify({
+      owner, name, default_branch: defaultBranch,
+      initialized_at: new Date().toISOString(),
+      file_count: fileCount,
+    }));
+
+    // 5. Get recent commits
+    const commitsRes = await fetch(`${ghApi}/commits?per_page=20`, { headers });
+    if (commitsRes.ok) {
+      const commits = await commitsRes.json();
+      for (let i = 0; i < commits.length; i++) {
+        const c = commits[i];
+        const meta = [
+          `message=${c.commit.message.split("\n")[0]}`,
+          `author=${c.commit.author.name}`,
+          `timestamp=${Math.floor(new Date(c.commit.author.date).getTime() / 1000)}`,
+          `parent=${commits[i + 1]?.sha || ""}`,
+        ].join("\n");
+        await bucket.put(`git/commits/${c.sha}`, meta);
+      }
+    }
+
+    // 6. Get branches
+    const branchesRes = await fetch(`${ghApi}/branches?per_page=30`, { headers });
+    if (branchesRes.ok) {
+      const branches = await branchesRes.json();
+      for (const b of branches) {
+        await bucket.put(`git/branches/${b.name}`, b.commit.sha);
+      }
+      await bucket.put("git/HEAD", `ref: refs/heads/${defaultBranch}`);
+    }
+
+    return Response.json({
+      ok: true,
+      repo,
+      default_branch: defaultBranch,
+      files: fileCount,
+    });
+  } catch (err) {
+    return Response.json({ error: err.message }, { status: 500 });
+  }
+}
+
+async function relayFetch(env, path) {
+  // Use Service Binding if available, otherwise external fetch
+  if (env.BIT_RELAY) {
+    return env.BIT_RELAY.fetch(new Request(`https://bit-relay/${path}`));
+  }
+  return fetch(`${relayBase(env)}/${path}`);
+}
+
+async function handleApiParticipants(request, env) {
+  const url = new URL(request.url);
+  const repo = url.searchParams.get("repo") || "";
+  const room = repo || "default";
+  try {
+    const res = await relayFetch(env, `api/v1/presence?room=${room}`);
+    return new Response(res.body, { status: res.status, headers: { "content-type": "application/json" } });
+  } catch {
+    return Response.json({ error: "relay unreachable" }, { status: 502 });
+  }
+}
+
+async function handleApiActivity(request, env) {
+  const url = new URL(request.url);
+  const repo = url.searchParams.get("repo") || "";
+  const after = url.searchParams.get("after") || "0";
+  const room = repo || "default";
+  try {
+    const res = await relayFetch(env, `api/v1/poll?room=${room}&after=${after}&limit=50`);
+    return new Response(res.body, { status: res.status, headers: { "content-type": "application/json" } });
+  } catch {
+    return Response.json({ error: "relay unreachable" }, { status: 502 });
+  }
+}
+
 export default {
   async fetch(request, env, ctx) {
-    setupR2(env);
     const url = new URL(request.url);
+
+    // Handle special API routes before MoonBit
+    if (url.pathname === "/api/init" && request.method === "POST") {
+      return handleApiInit(request, env);
+    }
+    if (url.pathname === "/api/participants") {
+      return handleApiParticipants(request, env);
+    }
+    if (url.pathname === "/api/activity") {
+      return handleApiActivity(request, env);
+    }
+
+    setupR2(env);
     await preloadForRoute(env, url.pathname);
     const m = await ensureInit();
     const response = await m.fetch(request, env, ctx);
