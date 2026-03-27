@@ -666,6 +666,9 @@ fn render_home_page() -> String {
     #|.identity-info code{background:var(--pre);padding:2px 4px;border-radius:3px;}
     #|.btn-row{display:flex;gap:8px;margin-top:8px;}
     #|.btn-row .btn{flex:1;}
+    #|.ws-progress{display:none;margin-top:12px;}.ws-progress-track{height:6px;background:var(--border);border-radius:3px;overflow:hidden;}
+    #|.ws-progress-bar{height:100%;background:#238636;border-radius:3px;transition:width 0.3s ease;}
+    #|.ws-progress-text{font-size:12px;color:#8b949e;margin-top:4px;min-height:16px;}
     #|.ws-recent{margin-top:16px;}.ws-recent h3{font-size:14px;color:#8b949e;margin-bottom:8px;}
     #|.ws-recent a{display:block;padding:6px 0;color:var(--link);text-decoration:none;}.ws-recent a:hover{text-decoration:underline;}
   let home_js =
@@ -731,19 +734,46 @@ fn render_home_page() -> String {
     #|  document.getElementById('id-status').textContent='Saved';setTimeout(()=>document.getElementById('id-status').textContent='',1500);
     #|}
     #|
+    #|function showProgress(msg,pct){
+    #|  const el=document.getElementById('ws-progress');
+    #|  const bar=document.getElementById('ws-bar');
+    #|  const txt=document.getElementById('ws-progress-text');
+    #|  el.style.display='block';bar.style.width=pct+'%';txt.textContent=msg;
+    #|}
+    #|function hideProgress(){document.getElementById('ws-progress').style.display='none';}
+    #|
     #|async function openWorkspace(e){
     #|  e.preventDefault();
     #|  const repo=document.getElementById('ws-repo').value.trim();
     #|  if(!repo||!repo.includes('/'))return alert('Enter owner/repo');
     #|  const btn=document.getElementById('ws-btn');btn.disabled=true;btn.textContent='Cloning...';
+    #|  showProgress('Connecting to GitHub...',10);
     #|  const id=await loadOrCreateIdentity();
     #|  const wsId=repo.replace(/\//g,'-')+'-'+Date.now().toString(36);
     #|  try{
+    #|    showProgress('Fetching repository metadata...',20);
     #|    const r=await(await fetch('/api/init?repo='+repo,{method:'POST'})).json();
-    #|    if(!r.ok){btn.textContent='Error: '+(r.error||'?');btn.disabled=false;return;}
+    #|    if(!r.ok){showProgress('Error: '+(r.error||'?'),100);btn.textContent='Retry';btn.disabled=false;return;}
+    #|    showProgress('Server loaded '+r.files+' files. Caching locally...',60);
+    #|    // Cache to IndexedDB
+    #|    const gh='https://api.github.com/repos/'+repo;
+    #|    const ghH={Accept:'application/vnd.github.v3+json'};
+    #|    let cached=0;
+    #|    try{
+    #|      const tr=await(await fetch(gh+'/git/trees/'+(r.default_branch||'main')+'?recursive=1',{headers:ghH})).json();
+    #|      const blobs=(tr.tree||[]).filter(e=>e.type==='blob'&&e.size<50000).slice(0,200);
+    #|      for(let i=0;i<blobs.length;i++){
+    #|        const e=blobs[i];
+    #|        showProgress('Caching: '+e.path+' ('+(i+1)+'/'+blobs.length+')',60+Math.round(35*i/blobs.length));
+    #|        try{const b=await(await fetch(gh+'/git/blobs/'+e.sha,{headers:ghH})).json();
+    #|          if(b.encoding==='base64'){const bin=Uint8Array.from(atob(b.content.replace(/\n/g,'')),c=>c.charCodeAt(0));await cachePut(e.path,new TextDecoder().decode(bin));cached++;}
+    #|        }catch{}
+    #|      }
+    #|    }catch{}
+    #|    showProgress('Done! '+r.files+' files ('+cached+' cached locally)',100);
     #|    saveWorkspace({id:wsId,repo,user:id.displayName||id.fingerprint,fingerprint:id.fingerprint,created:Date.now(),files:r.files});
-    #|    window.location.href='/filer';
-    #|  }catch{btn.textContent='Failed';btn.disabled=false;}
+    #|    setTimeout(()=>{window.location.href='/filer';},500);
+    #|  }catch{showProgress('Failed',100);btn.textContent='Retry';btn.disabled=false;}
     #|}
     #|
     #|// --- Init UI ---
@@ -785,6 +815,7 @@ fn render_home_page() -> String {
       #|  <label>Repository (owner/repo)</label>
       #|  <input id="ws-repo" placeholder="e.g. bit-vcs/bit-relay" required />
       #|  <button id="ws-btn" class="btn" type="submit">Clone &amp; Open</button>
+      #|  <div id="ws-progress" class="ws-progress"><div class="ws-progress-track"><div id="ws-bar" class="ws-progress-bar" style="width:0%"></div></div><div id="ws-progress-text" class="ws-progress-text"></div></div>
       #|</form>
       #|
       #|<div class="ws-recent"><h3>Recent workspaces</h3><div id="ws-recent-list"></div></div>
