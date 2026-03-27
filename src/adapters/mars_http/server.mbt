@@ -333,6 +333,48 @@ pub fn create_app_with_storage(api : @core.ApiState) -> @mars.Server {
     }),
   )
   app.post(
+    "/api/files/sync",
+    @mars.handler(async fn(ctx) {
+      guard require_write(api, ctx) is Some(_) else { return }
+      match ctx.body_json() {
+        Some(json) => {
+          guard json is Object(obj) else {
+            let e : Map[String, Json] = {}
+            e.set("error", "invalid payload".to_json())
+            return ctx.json(e.to_json(), status=400)
+          }
+          guard obj.get("files") is Some(Array(files_arr)) else {
+            let e : Map[String, Json] = {}
+            e.set("error", "missing files array".to_json())
+            return ctx.json(e.to_json(), status=400)
+          }
+          let mut synced = 0
+          for item in files_arr {
+            guard item is Object(file_obj) else { continue }
+            let path = match file_obj.get("path") {
+              Some(String(s)) => s
+              _ => continue
+            }
+            let content = match file_obj.get("content") {
+              Some(String(s)) => s
+              _ => continue
+            }
+            api.store.set_string(path, content)
+            synced += 1
+          }
+          let resp : Map[String, Json] = {}
+          resp.set("synced", synced.to_json())
+          ctx.json(resp.to_json())
+        }
+        None => {
+          let e : Map[String, Json] = {}
+          e.set("error", "invalid json".to_json())
+          ctx.json(e.to_json(), status=400)
+        }
+      }
+    }),
+  )
+  app.post(
     "/api/pulls/:id/comments",
     @mars.handler(async fn(ctx) {
       guard require_write(api, ctx) is Some(token_info) else { return }
@@ -765,6 +807,13 @@ fn render_home_page() -> String {
     #|  if(!id.fingerprint||!id.privateKey)return alert('Invalid');await idPut('identity',id);location.reload();};input.click();
     #|}
     #|
+    #|// --- Blob DB (for commit metadata) ---
+    #|const BLOB_DB='bithub-blobs',BLOB_VER=1,BLOB_STORE='blobs';
+    #|let _blobDbP=null;
+    #|function openBlobDB(){if(_blobDbP)return _blobDbP;_blobDbP=new Promise((ok,ng)=>{const r=indexedDB.open(BLOB_DB,BLOB_VER);r.onupgradeneeded=()=>r.result.createObjectStore(BLOB_STORE);r.onsuccess=()=>ok(r.result);r.onerror=()=>{_blobDbP=null;ng(r.error);};});return _blobDbP;}
+    #|async function idbPut(k,v){const db=await openBlobDB();return new Promise(ok=>{const tx=db.transaction(BLOB_STORE,'readwrite');tx.objectStore(BLOB_STORE).put(v,k);tx.oncomplete=()=>ok();});}
+    #|async function idbPutBatch(entries){const db=await openBlobDB();return new Promise((ok,ng)=>{const tx=db.transaction(BLOB_STORE,'readwrite');const s=tx.objectStore(BLOB_STORE);for(const[k,v]of entries)s.put(v,k);tx.oncomplete=()=>ok();tx.onerror=()=>ng(tx.error);});}
+    #|
     #|// --- Workspace ---
     #|const WS_KEY='bithub_workspaces';
     #|function getWorkspaces(){try{return JSON.parse(localStorage.getItem(WS_KEY)||'[]');}catch{return [];}}
@@ -815,8 +864,14 @@ fn render_home_page() -> String {
     #|          return null;
     #|        }));
     #|        const batch=results.filter(r=>r.status==='fulfilled'&&r.value).map(r=>r.value);
-    #|        if(batch.length>0){await cachePutBatch(batch);cached+=batch.length;}
+    #|        if(batch.length>0){await idbPutBatch(batch.map(([p,v])=>['ws:'+wsId+':file:'+p,v]));cached+=batch.length;}
     #|      }
+    #|    }catch{}
+    #|    // Store HEAD commit metadata in IDB
+    #|    try{
+    #|      const commitRes=await fetch(gh+'/commits?sha='+(r.default_branch||'main')+'&per_page=1',{headers:ghH});
+    #|      const commits=await commitRes.json();
+    #|      if(commits.length>0){const c=commits[0];await idbPut('ws:'+wsId+':commit:'+c.sha,JSON.stringify({sha:c.sha,message:c.commit.message,author:c.commit.author.name,date:c.commit.author.date}));await idbPut('ws:'+wsId+':HEAD',c.sha);}
     #|    }catch{}
     #|    showProgress('Done! '+r.files+' files ('+cached+' cached locally)',100);
     #|    saveWorkspace({id:wsId,repo,user:id.displayName||id.fingerprint,fingerprint:id.fingerprint,created:Date.now(),files:r.files});
@@ -897,13 +952,14 @@ fn render_filer_page(api : @core.ApiState, raw_path : String, workspace~ : Strin
       #|async function renderFiler(){
       #|  const params=new URLSearchParams(location.search);
       #|  const path=params.get('path')||'';
-      #|  const prefix=path?'file:'+path+'/':'file:';
-      #|  const allKeys=await idbKeys('file:');
+      #|  const wsId=document.body.dataset.wsPrefix.split('/').pop();
+      #|  const keyPfx='ws:'+wsId+':file:';
+      #|  const allKeys=await idbKeys(keyPfx);
       #|  // Build directory listing for current path
       #|  const seen=new Set();
       #|  const entries=[];
       #|  for(const k of allKeys){
-      #|    const rel=k.slice('file:'.length);
+      #|    const rel=k.slice(keyPfx.length);
       #|    if(path&&!rel.startsWith(path+'/'))continue;
       #|    if(!path&&rel.includes('/')===false){entries.push({name:rel,path:rel,isDir:false});continue;}
       #|    const sub=path?rel.slice(path.length+1):rel;
@@ -982,23 +1038,81 @@ fn render_file_page(api : @core.ApiState, raw_path : String, workspace~ : String
   if workspace.length() > 0 {
     let prefix = "/workspace/" + workspace
     let file_js =
+      #|<style>
+      #|.file-toolbar{display:flex;gap:8px;margin:8px 0;}
+      #|.file-toolbar .btn{width:auto;padding:6px 14px;font-size:13px;}
+      #|#file-editor{width:100%;min-height:400px;font-family:'SFMono-Regular',Consolas,monospace;font-size:13px;line-height:1.5;background:var(--pre);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:12px;resize:vertical;tab-size:2;}
+      #|</style>
       #|<script>
       #|const DB_NAME='bithub-blobs',DB_VER=1,STORE='blobs';
       #|let _dbP=null;
       #|function openDB(){if(_dbP)return _dbP;_dbP=new Promise((ok,ng)=>{const r=indexedDB.open(DB_NAME,DB_VER);r.onupgradeneeded=()=>r.result.createObjectStore(STORE);r.onsuccess=()=>ok(r.result);r.onerror=()=>{_dbP=null;ng(r.error);};});return _dbP;}
       #|async function idbGet(k){const db=await openDB();return new Promise(ok=>{const r=db.transaction(STORE).objectStore(STORE).get(k);r.onsuccess=()=>ok(r.result??null);r.onerror=()=>ok(null);});}
+      #|async function idbPut(k,v){const db=await openDB();return new Promise((ok,ng)=>{const tx=db.transaction(STORE,'readwrite');const s=tx.objectStore(STORE);const r=s.put(v,k);r.onsuccess=()=>ok();r.onerror=()=>ng(r.error);});}
       #|
-      #|async function renderFile(){
-      #|  const params=new URLSearchParams(location.search);
-      #|  const path=params.get('path')||'';
-      #|  document.getElementById('file-title').textContent=path||'file';
-      #|  const content=await idbGet('file:'+path);
-      #|  const el=document.getElementById('file-content');
+      #|const _wsId=document.body.dataset.wsPrefix?document.body.dataset.wsPrefix.split('/').pop():'';
+      #|function _fileKey(p){return _wsId?'ws:'+_wsId+':file:'+p:'file:'+p;}
+      #|let _filePath='';
+      #|let _editing=false;
+      #|
+      #|function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+      #|
+      #|function renderContent(el,path,content){
       #|  if(content===null){el.textContent='not found (not in local cache)';return;}
       #|  if(path.endsWith('.md')){el.innerHTML='<em>Markdown preview not available client-side</em><pre class="source-code"><code>'+escHtml(content)+'</code></pre>';}
       #|  else{el.innerHTML='<pre class="source-code"><code>'+escHtml(content)+'</code></pre>';}
       #|}
-      #|function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+      #|
+      #|function showToolbar(mode){
+      #|  const tb=document.getElementById('file-toolbar');
+      #|  if(mode==='view'){
+      #|    tb.innerHTML='<button class="btn btn-secondary" onclick="startEdit()">Edit</button>';
+      #|  }else{
+      #|    tb.innerHTML='<button class="btn" onclick="saveEdit()">Save</button><button class="btn btn-secondary" onclick="cancelEdit()">Cancel</button>';
+      #|  }
+      #|}
+      #|
+      #|async function renderFile(){
+      #|  const params=new URLSearchParams(location.search);
+      #|  _filePath=params.get('path')||'';
+      #|  document.getElementById('file-title').textContent=_filePath||'file';
+      #|  const content=await idbGet(_fileKey(_filePath));
+      #|  const el=document.getElementById('file-content');
+      #|  renderContent(el,_filePath,content);
+      #|  if(content!==null) showToolbar('view');
+      #|}
+      #|
+      #|async function startEdit(){
+      #|  _editing=true;
+      #|  const content=await idbGet(_fileKey(_filePath));
+      #|  const el=document.getElementById('file-content');
+      #|  el.innerHTML='<textarea id="file-editor">'+escHtml(content||'')+'</textarea>';
+      #|  const ta=document.getElementById('file-editor');
+      #|  ta.addEventListener('keydown',function(e){if(e.key==='Tab'){e.preventDefault();const s=this.selectionStart,end=this.selectionEnd;this.value=this.value.substring(0,s)+'  '+this.value.substring(end);this.selectionStart=this.selectionEnd=s+2;}});
+      #|  showToolbar('edit');
+      #|}
+      #|
+      #|async function saveEdit(){
+      #|  const ta=document.getElementById('file-editor');
+      #|  if(!ta)return;
+      #|  const content=ta.value;
+      #|  await idbPut(_fileKey(_filePath),content);
+      #|  _editing=false;
+      #|  const el=document.getElementById('file-content');
+      #|  renderContent(el,_filePath,content);
+      #|  showToolbar('view');
+      #|}
+      #|
+      #|async function cancelEdit(){
+      #|  _editing=false;
+      #|  const content=await idbGet(_fileKey(_filePath));
+      #|  const el=document.getElementById('file-content');
+      #|  renderContent(el,_filePath,content);
+      #|  showToolbar('view');
+      #|}
+      #|
+      #|// TODO: git commit via IdbGitRepo — requires MoonBit WASM runtime loaded on page
+      #|
       #|document.addEventListener('DOMContentLoaded',renderFile);
       #|</script>
     return {
@@ -1009,6 +1123,14 @@ fn render_file_page(api : @core.ApiState, raw_path : String, workspace~ : String
           @luna.h("h1", [("id", @luna.attr_static("file-title"))], [
             @luna.text("loading..."),
           ]),
+          @luna.h(
+            "div",
+            [
+              ("id", @luna.attr_static("file-toolbar")),
+              ("class", @luna.attr_static("file-toolbar")),
+            ],
+            [],
+          ),
           @luna.h("div", [("id", @luna.attr_static("file-content"))], [
             @luna.text("loading..."),
           ]),
@@ -1346,11 +1468,14 @@ fn render_layout(
     #|  return results;
     #|}
     #|
-    #|// Unified: FS → IDB
-    #|async function cacheGet(key){const v=await fsRead(key);if(v!==null)return v;return idbGet('file:'+key);}
-    #|async function cachePut(key,val){if(fsRoot)await fsWrite(key,val);else await idbPut('file:'+key,val);}
-    #|async function cachePutBatch(entries){if(fsRoot){for(const[k,v]of entries)await fsWrite(k,v);}else await idbPutBatch(entries.map(([k,v])=>['file:'+k,v]));}
-    #|async function cacheKeys(prefix){if(fsRoot)return fsList(prefix);return(await idbKeys('file:'+prefix)).map(k=>k.replace('file:',''));}
+    #|// Unified: FS → IDB (ws-aware)
+    #|const _wsId=window._termWsId||'';
+    #|function _idbFileKey(k){return _wsId?'ws:'+_wsId+':file:'+k:'file:'+k;}
+    #|function _idbFilePrefix(){return _wsId?'ws:'+_wsId+':file:':'file:';}
+    #|async function cacheGet(key){const v=await fsRead(key);if(v!==null)return v;return idbGet(_idbFileKey(key));}
+    #|async function cachePut(key,val){if(fsRoot)await fsWrite(key,val);else await idbPut(_idbFileKey(key),val);}
+    #|async function cachePutBatch(entries){if(fsRoot){for(const[k,v]of entries)await fsWrite(k,v);}else await idbPutBatch(entries.map(([k,v])=>[_idbFileKey(k),v]));}
+    #|async function cacheKeys(prefix){if(fsRoot)return fsList(prefix);const pfx=_idbFilePrefix()+prefix;return(await idbKeys(pfx)).map(k=>k.slice(_idbFilePrefix().length));}
     #|async function cacheClear(){if(fsRoot){/* can't clear FS easily */}else await idbClear();}
     #|function storageMode(){return fsRoot?'filesystem':'indexeddb';}
     #|
@@ -1381,7 +1506,7 @@ fn render_layout(
     #|tw('bithub terminal — Ctrl-` to toggle','t-info');
     #|tw('Storage: '+storageMode()+'. Type "help" for commands.','t-info');
     #|const C={
-    #|  help:()=>tw('Commands: help, clear, init <owner/repo>, cat <path>, ls [path], cache, cache-clear, issues, activity, participants, repo','t-info'),
+    #|  help:()=>tw('Commands: help, clear, init <owner/repo>, cat <path>, ls [path], cache, cache-clear, sync, issues, activity, participants, repo','t-info'),
     #|  clear:()=>{O.innerHTML='';},
     #|  repo:async()=>{try{const r=await(await fetch('/_meta/repo')).json();tw(JSON.stringify(r,null,2),'t-info');}catch{tw('No repo initialized','t-err');}},
     #|  issues:()=>{window.open('/issues','_blank');tw('Opened /issues','t-info');},
@@ -1393,9 +1518,9 @@ fn render_layout(
     #|    else{const r=await fetch('/file?path='+encodeURIComponent(a[0]));if(r.ok){const t=await r.text();const plain=t.replace(/<[^>]*>/g,'').slice(0,2000);await cachePut(a[0],plain);tw(plain);}else tw('Not found: '+a[0],'t-err');}
     #|  },
     #|  ls:async(a)=>{
-    #|    const prefix='file:'+(a[0]?a[0]+'/':'');
+    #|    const prefix=a[0]?a[0]+'/':'';
     #|    const keys=await cacheKeys(prefix);
-    #|    if(keys.length){keys.forEach(k=>tw(k.replace('file:','')));tw(keys.length+' file(s) in cache','t-info');}
+    #|    if(keys.length){keys.forEach(k=>tw(k));tw(keys.length+' file(s) in cache','t-info');}
     #|    else tw('No files cached. Run "init owner/repo" first.','t-info');
     #|  },
     #|  cache:async()=>{const keys=await cacheKeys('');tw(keys.length+' entries in IndexedDB cache','t-info');},
@@ -1429,13 +1554,29 @@ fn render_layout(
     #|      tw('IndexedDB: '+n+' files cached','t-ok');
     #|    }catch(e){tw('IndexedDB cache failed: '+e.message,'t-err');}
     #|  },
+    #|  sync:async(a)=>{
+    #|    const keys=await cacheKeys('');
+    #|    if(!keys.length)return tw('Nothing to sync','t-info');
+    #|    tw('Syncing '+keys.length+' files to server...','t-info');
+    #|    const files=[];
+    #|    for(const k of keys){const content=await cacheGet(k);if(content!==null)files.push({path:k,content});}
+    #|    const token=localStorage.getItem('bithub_token')||'tok-owner-001';
+    #|    const r=await fetch('/api/files/sync',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+token},body:JSON.stringify({files})});
+    #|    const data=await r.json();
+    #|    tw('Synced '+(data.synced||0)+' files to server','t-ok');
+    #|  },
     #|};
     #|I.addEventListener('keydown',async e=>{
     #|  if(e.key==='Enter'&&!e.isComposing){const v=I.value.trim();I.value='';if(!v)return;tw('$ '+v,'t-cmd');const[c,...a]=v.split(/\s+/);C[c]?await C[c](a):tw('Unknown: '+c+'. Type "help".','t-err');}
     #|});
     #|</script>
   let head = "<meta charset=\"utf-8\"><style>" + css + terminal_css + "</style>"
-  @sol.render_page(page, title~, head~) + terminal_js
+  let ws_id_script = if workspace.length() > 0 {
+    "<script>window._termWsId='" + workspace + "';</script>"
+  } else {
+    "<script>window._termWsId='';</script>"
+  }
+  @sol.render_page(page, title~, head~) + ws_id_script + terminal_js
 }
 
 ///|
@@ -2414,6 +2555,80 @@ fn render_compare_page(
 
 ///|
 fn render_commits_page(api : @core.ApiState, workspace~ : String = "") -> String {
+  // Workspace commits: client-side from IndexedDB
+  if workspace.length() > 0 {
+    let prefix = "/workspace/" + workspace
+    let ws_id = workspace
+    let commits_js =
+      #|<script>
+      #|const DB_NAME='bithub-blobs',DB_VER=1,STORE='blobs';
+      #|let _dbP=null;
+      #|function openDB(){if(_dbP)return _dbP;_dbP=new Promise((ok,ng)=>{const r=indexedDB.open(DB_NAME,DB_VER);r.onupgradeneeded=()=>r.result.createObjectStore(STORE);r.onsuccess=()=>ok(r.result);r.onerror=()=>{_dbP=null;ng(r.error);};});return _dbP;}
+      #|async function idbGet(k){const db=await openDB();return new Promise(ok=>{const r=db.transaction(STORE).objectStore(STORE).get(k);r.onsuccess=()=>ok(r.result??null);r.onerror=()=>ok(null);});}
+      #|async function idbKeys(pfx){const db=await openDB();return new Promise(ok=>{const r=db.transaction(STORE).objectStore(STORE).getAllKeys();r.onsuccess=()=>ok((r.result||[]).filter(k=>typeof k==='string'&&k.startsWith(pfx)));r.onerror=()=>ok([]);});}
+      #|
+      #|function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+      #|
+      #|async function renderCommits(){
+      #|  const wsId=document.body.dataset.wsId;
+      #|  const tbody=document.getElementById('commits-tbody');
+      #|  // Collect all commit keys for this workspace
+      #|  const commitKeys=await idbKeys('ws:'+wsId+':commit:');
+      #|  if(commitKeys.length===0){
+      #|    tbody.innerHTML='<tr><td colspan="4">No commits (not cached locally)</td></tr>';
+      #|    return;
+      #|  }
+      #|  const commits=[];
+      #|  for(const k of commitKeys){
+      #|    try{const v=await idbGet(k);if(v)commits.push(JSON.parse(v));}catch{}
+      #|  }
+      #|  // Sort by date descending
+      #|  commits.sort((a,b)=>new Date(b.date)-new Date(a.date));
+      #|  if(commits.length===0){
+      #|    tbody.innerHTML='<tr><td colspan="4">No commits</td></tr>';
+      #|    return;
+      #|  }
+      #|  const wsPrefix=document.body.dataset.wsPrefix;
+      #|  tbody.innerHTML='';
+      #|  for(const c of commits){
+      #|    const short=c.sha.slice(0,7);
+      #|    const msg=(c.message||'').split('\n')[0];
+      #|    const date=c.date?new Date(c.date).toLocaleDateString(undefined,{year:'numeric',month:'short',day:'numeric'}):'';
+      #|    const tr=document.createElement('tr');
+      #|    tr.innerHTML='<td><a href="'+escHtml(wsPrefix+'/commit/'+c.sha)+'">'+escHtml(short)+'</a></td><td>'+escHtml(msg)+'</td><td>'+escHtml(c.author||'')+'</td><td>'+escHtml(date)+'</td>';
+      #|    tbody.appendChild(tr);
+      #|  }
+      #|}
+      #|document.addEventListener('DOMContentLoaded',renderCommits);
+      #|</script>
+    return render_layout(
+      "Commits",
+      [
+        @luna.h("h1", [], [@luna.text("Commits")]),
+        @luna.h("table", [("class", @luna.attr_static("wf-table"))], [
+          @luna.h("thead", [], [
+            @luna.h("tr", [], [
+              @luna.h("th", [], [@luna.text("SHA")]),
+              @luna.h("th", [], [@luna.text("Message")]),
+              @luna.h("th", [], [@luna.text("Author")]),
+              @luna.h("th", [], [@luna.text("Date")]),
+            ]),
+          ]),
+          @luna.h("tbody", [("id", @luna.attr_static("commits-tbody"))], [
+            @luna.h("tr", [], [
+              @luna.h("td", [("colspan", @luna.attr_static("4"))], [
+                @luna.text("loading..."),
+              ]),
+            ]),
+          ]),
+        ]),
+        @luna.raw_html(
+          "<script>document.body.dataset.wsId='" + ws_id + "';document.body.dataset.wsPrefix='" + prefix + "';</script>",
+        ),
+      ],
+      workspace~,
+    ) + commits_js
+  }
   let commits = api.list_commits()
   let rows : Array[@luna.Node[Unit, String]] = []
   for commit in commits {
