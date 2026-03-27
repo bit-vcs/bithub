@@ -934,74 +934,41 @@ fn render_layout(
     #|.wf-table{width:100%;border-collapse:collapse;}.wf-table th,.wf-table td{text-align:left;padding:8px 12px;border-bottom:1px solid var(--border);}.wf-table th{font-weight:600;}
     #|@media (max-width: 760px){body{padding:64px 10px 12px;height:auto;}main{min-height:auto;}footer{position:static;margin-top:12px;padding:8px 0 0;border-top:none;}}
   let terminal_css =
-    #|#terminal-panel{display:none;position:fixed;bottom:0;left:0;right:0;height:40vh;z-index:100;background:#0d1117;border-top:2px solid #30363d;overflow:hidden;}
+    #|#terminal-panel{display:none;position:fixed;bottom:0;left:0;right:0;height:40vh;z-index:100;background:#0d1117;border-top:2px solid #30363d;font-family:ui-monospace,Menlo,monospace;font-size:14px;color:#c9d1d9;overflow:hidden;}
     #|#terminal-panel.open{display:flex;flex-direction:column;}
-    #|#terminal-bar{display:flex;justify-content:space-between;align-items:center;padding:4px 12px;background:#161b22;border-bottom:1px solid #30363d;font-size:12px;color:#8b949e;font-family:ui-monospace,Menlo,monospace;}
-    #|#terminal-bar button{background:none;border:none;color:#8b949e;cursor:pointer;font-size:14px;}
-    #|#terminal-container{flex:1;overflow:hidden;}
+    #|#terminal-bar{display:flex;justify-content:space-between;align-items:center;padding:4px 12px;background:#161b22;border-bottom:1px solid #30363d;font-size:12px;color:#8b949e;}
+    #|#terminal-bar button{background:none;border:none;color:#8b949e;cursor:pointer;font-size:14px;padding:4px 8px;}
+    #|#terminal-bar button:hover{color:#c9d1d9;}
+    #|#terminal-output{flex:1;overflow-y:auto;padding:8px 12px;white-space:pre-wrap;word-break:break-all;line-height:1.5;}
+    #|#terminal-input-row{display:flex;align-items:center;padding:6px 12px;background:#161b22;border-top:1px solid #30363d;gap:8px;}
+    #|#terminal-prompt{color:#58a6ff;flex-shrink:0;}
+    #|#terminal-input{flex:1;background:none;border:none;color:#c9d1d9;font-family:inherit;font-size:14px;outline:none;caret-color:#58a6ff;}
+    #|.t-info{color:#8b949e;}.t-ok{color:#3fb950;}.t-err{color:#f85149;}.t-cmd{color:#58a6ff;}
   let terminal_js =
-    #|<div id="terminal-panel"><div id="terminal-bar"><span>Terminal <small id="terminal-status"></small></span><button onclick="toggleTerminal()">✕</button></div><div id="terminal-container"></div></div>
-    #|<script type="module">
-    #|const panel=document.getElementById('terminal-panel');
-    #|const container=document.getElementById('terminal-container');
-    #|const status=document.getElementById('terminal-status');
-    #|let term=null,resttyLoaded=false;
-    #|
-    #|async function ensureRestty(){
-    #|  if(resttyLoaded)return true;
-    #|  status.textContent='loading restty...';
-    #|  try{
-    #|    const{Terminal}=await import('https://esm.sh/restty@0.1.34/xterm');
-    #|    term=new Terminal({cols:120,rows:20});
-    #|    term.open(container);
-    #|    resttyLoaded=true;
-    #|    status.textContent='';
-    #|    let line='';
-    #|    term.writeln('\x1b[36mbithub terminal v0.2 — powered by restty\x1b[0m');
-    #|    term.writeln('\x1b[90mType "help" for commands. Ctrl-` to toggle.\x1b[0m');
-    #|    term.write('\r\n\x1b[34m$ \x1b[0m');
-    #|    term.onData(async(data)=>{
-    #|      for(const ch of data){
-    #|        if(ch==='\r'||ch==='\n'){
-    #|          if(line.trim())await runCmd(line.trim());
-    #|          line='';
-    #|          term.write('\r\n\x1b[34m$ \x1b[0m');
-    #|        }else if(ch==='\x7f'){
-    #|          if(line.length>0){line=line.slice(0,-1);}
-    #|        }else if(ch.charCodeAt(0)>=32){
-    #|          line+=ch;
-    #|        }
-    #|      }
-    #|    });
-    #|    return true;
-    #|  }catch(e){
-    #|    status.textContent='restty failed: '+e.message;
-    #|    console.error('restty load failed',e);
-    #|    return false;
-    #|  }
-    #|}
-    #|
-    #|async function runCmd(input){
-    #|  const[cmd,...args]=input.split(/\s+/);
-    #|  const CMDS={
-    #|    help:()=>term.writeln('\x1b[90mCommands: help, clear, init <owner/repo>, issues, activity, participants, repo\x1b[0m'),
-    #|    clear:()=>{term.clear();term.reset();},
-    #|    repo:async()=>{try{const r=await fetch('/_meta/repo');const m=await r.json();term.writeln(JSON.stringify(m,null,2));}catch{term.writeln('\x1b[31mNo repo initialized\x1b[0m');}},
-    #|    issues:()=>{window.location.href='/issues';},
-    #|    participants:async()=>{const repo=args[0]||'';const r=await fetch('/api/participants?repo='+repo);const d=await r.json().catch(()=>({}));const ps=d.participants||[];if(ps.length)ps.forEach(p=>term.writeln(p.participant_id+' ('+p.status+')'));else term.writeln('\x1b[90mNo active participants\x1b[0m');},
-    #|    activity:async()=>{const repo=args[0]||'';const r=await fetch('/api/activity?repo='+repo);const d=await r.json().catch(()=>({}));const es=d.envelopes||[];if(es.length)es.forEach(e=>term.writeln('['+e.sender+'] '+e.topic+' '+e.id));else term.writeln('\x1b[90mNo recent activity\x1b[0m');},
-    #|    init:async()=>{if(!args[0])return term.writeln('\x1b[31mUsage: init owner/repo\x1b[0m');term.writeln('\x1b[90mInitializing '+args[0]+'...\x1b[0m');const r=await fetch('/api/init?repo='+args[0],{method:'POST'});const d=await r.json().catch(()=>({}));term.writeln(d.ok?'\x1b[32mOK: '+d.files+' files loaded\x1b[0m':'\x1b[31mError: '+(d.error||'unknown')+'\x1b[0m');},
-    #|  };
-    #|  if(CMDS[cmd])await CMDS[cmd]();
-    #|  else term.writeln('\x1b[31mUnknown: '+cmd+'. Type "help".\x1b[0m');
-    #|}
-    #|
-    #|window.toggleTerminal=async function(){
-    #|  const opening=!panel.classList.contains('open');
-    #|  panel.classList.toggle('open');
-    #|  if(opening)await ensureRestty();
-    #|};
+    #|<div id="terminal-panel">
+    #|<div id="terminal-bar"><span>Terminal</span><button onclick="toggleTerminal()">✕</button></div>
+    #|<div id="terminal-output"></div>
+    #|<div id="terminal-input-row"><span id="terminal-prompt">$</span><input id="terminal-input" spellcheck="false" autocomplete="off" /></div>
+    #|</div>
+    #|<script>
+    #|const P=document.getElementById('terminal-panel'),O=document.getElementById('terminal-output'),I=document.getElementById('terminal-input');
+    #|function toggleTerminal(){P.classList.toggle('open');if(P.classList.contains('open')){I.focus();}}
     #|document.addEventListener('keydown',e=>{if(e.key==='`'&&e.ctrlKey){e.preventDefault();toggleTerminal();}});
+    #|function tw(t,c){const d=document.createElement('div');d.textContent=t;if(c)d.className=c;O.appendChild(d);O.scrollTop=1e9;}
+    #|tw('bithub terminal — Ctrl-` to toggle','t-info');
+    #|tw('Type "help" for commands.','t-info');
+    #|const C={
+    #|  help:()=>tw('Commands: help, clear, init <owner/repo>, issues, activity, participants, repo','t-info'),
+    #|  clear:()=>{O.innerHTML='';},
+    #|  repo:async()=>{try{const r=await(await fetch('/_meta/repo')).json();tw(JSON.stringify(r,null,2),'t-info');}catch{tw('No repo initialized','t-err');}},
+    #|  issues:()=>{window.open('/issues','_blank');tw('Opened /issues','t-info');},
+    #|  participants:async(a)=>{const r=await(await fetch('/api/participants?repo='+(a[0]||''))).json().catch(()=>({}));const p=r.participants||[];p.length?p.forEach(x=>tw(x.participant_id+' ('+x.status+')')):tw('No active participants','t-info');},
+    #|  activity:async(a)=>{const r=await(await fetch('/api/activity?repo='+(a[0]||''))).json().catch(()=>({}));const e=r.envelopes||[];e.length?e.forEach(x=>tw('['+x.sender+'] '+x.topic+' '+x.id)):tw('No recent activity','t-info');},
+    #|  init:async(a)=>{if(!a[0])return tw('Usage: init owner/repo','t-err');tw('Initializing '+a[0]+'...','t-info');const r=await(await fetch('/api/init?repo='+a[0],{method:'POST'})).json().catch(()=>({}));tw(r.ok?'OK: '+r.files+' files':'Error: '+(r.error||'?'),r.ok?'t-ok':'t-err');},
+    #|};
+    #|I.addEventListener('keydown',async e=>{
+    #|  if(e.key==='Enter'&&!e.isComposing){const v=I.value.trim();I.value='';if(!v)return;tw('$ '+v,'t-cmd');const[c,...a]=v.split(/\s+/);C[c]?await C[c](a):tw('Unknown: '+c+'. Type "help".','t-err');}
+    #|});
     #|</script>
   let head = "<meta charset=\"utf-8\"><style>" + css + terminal_css + "</style>"
   @sol.render_page(page, title~, head~) + terminal_js
