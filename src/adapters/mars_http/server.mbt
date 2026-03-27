@@ -652,52 +652,136 @@ priv struct PageHtml {
 fn render_home_page() -> String {
   let home_css =
     #|.landing{max-width:600px;margin:40px auto;}
-    #|.landing h1{font-size:28px;margin-bottom:8px;}
-    #|.landing p{color:#8b949e;margin-bottom:24px;}
-    #|.ws-form{display:flex;flex-direction:column;gap:12px;background:var(--pre);padding:20px;border-radius:8px;border:1px solid var(--border);}
-    #|.ws-form label{font-size:13px;color:#8b949e;}
-    #|.ws-form input{padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:14px;font-family:inherit;}
-    #|.ws-form button{padding:10px 16px;background:#238636;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-weight:600;}
-    #|.ws-form button:hover{background:#2ea043;}
-    #|.ws-recent{margin-top:24px;}.ws-recent h3{font-size:14px;color:#8b949e;margin-bottom:8px;}
+    #|.landing h1{font-size:28px;margin-bottom:4px;}
+    #|.landing p{color:#8b949e;margin-bottom:20px;}
+    #|.section{background:var(--pre);padding:20px;border-radius:8px;border:1px solid var(--border);margin-bottom:16px;}
+    #|.section h2{font-size:16px;margin:0 0 12px;}
+    #|.section label{font-size:13px;color:#8b949e;display:block;margin-bottom:4px;}
+    #|.section input{padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);font-size:14px;font-family:inherit;width:100%;box-sizing:border-box;margin-bottom:8px;}
+    #|.btn{padding:10px 16px;background:#238636;color:#fff;border:none;border-radius:6px;font-size:14px;cursor:pointer;font-weight:600;width:100%;}
+    #|.btn:hover{background:#2ea043;}.btn:disabled{opacity:0.5;cursor:not-allowed;}
+    #|.btn-secondary{background:var(--panel);color:var(--text);border:1px solid var(--border);}
+    #|.btn-secondary:hover{background:var(--pre);}
+    #|.identity-info{font-size:12px;color:#8b949e;margin-top:8px;word-break:break-all;}
+    #|.identity-info code{background:var(--pre);padding:2px 4px;border-radius:3px;}
+    #|.btn-row{display:flex;gap:8px;margin-top:8px;}
+    #|.btn-row .btn{flex:1;}
+    #|.ws-recent{margin-top:16px;}.ws-recent h3{font-size:14px;color:#8b949e;margin-bottom:8px;}
     #|.ws-recent a{display:block;padding:6px 0;color:var(--link);text-decoration:none;}.ws-recent a:hover{text-decoration:underline;}
   let home_js =
     #|<script>
+    #|// --- Identity (Ed25519 key pair in IndexedDB) ---
+    #|const ID_DB='bithub-identity',ID_VER=1,ID_STORE='keys';
+    #|function openIdDB(){return new Promise((ok,ng)=>{const r=indexedDB.open(ID_DB,ID_VER);r.onupgradeneeded=()=>r.result.createObjectStore(ID_STORE);r.onsuccess=()=>ok(r.result);r.onerror=()=>ng(r.error);});}
+    #|async function idGet(k){const db=await openIdDB();return new Promise(ok=>{const r=db.transaction(ID_STORE).objectStore(ID_STORE).get(k);r.onsuccess=()=>ok(r.result??null);r.onerror=()=>ok(null);});}
+    #|async function idPut(k,v){const db=await openIdDB();return new Promise(ok=>{const tx=db.transaction(ID_STORE,'readwrite');tx.objectStore(ID_STORE).put(v,k);tx.oncomplete=()=>ok();});}
+    #|
+    #|async function generateIdentity(){
+    #|  const kp=await crypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},true,['sign','verify']);
+    #|  const pubJwk=await crypto.subtle.exportKey('jwk',kp.publicKey);
+    #|  const privJwk=await crypto.subtle.exportKey('jwk',kp.privateKey);
+    #|  const raw=await crypto.subtle.exportKey('raw',kp.publicKey);
+    #|  const fp=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',raw))).map(b=>b.toString(16).padStart(2,'0')).join('').slice(0,16);
+    #|  return{publicKey:pubJwk,privateKey:privJwk,fingerprint:fp};
+    #|}
+    #|
+    #|async function loadOrCreateIdentity(){
+    #|  let id=await idGet('identity');
+    #|  if(!id){
+    #|    id=await generateIdentity();
+    #|    id.displayName='';
+    #|    id.createdAt=Date.now();
+    #|    await idPut('identity',id);
+    #|  }
+    #|  return id;
+    #|}
+    #|
+    #|async function exportIdentity(){
+    #|  const id=await idGet('identity');
+    #|  if(!id)return alert('No identity');
+    #|  const blob=new Blob([JSON.stringify(id,null,2)],{type:'application/json'});
+    #|  if(window.showSaveFilePicker){
+    #|    try{const fh=await window.showSaveFilePicker({suggestedName:'bithub-identity.json',types:[{description:'Identity',accept:{'application/json':['.json']}}]});
+    #|    const ws=await fh.createWritable();await ws.write(blob);await ws.close();return;}catch{}
+    #|  }
+    #|  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='bithub-identity.json';a.click();
+    #|}
+    #|
+    #|async function importIdentity(){
+    #|  if(window.showOpenFilePicker){
+    #|    try{const[fh]=await window.showOpenFilePicker({types:[{accept:{'application/json':['.json']}}]});
+    #|    const f=await fh.getFile();const id=JSON.parse(await f.text());
+    #|    if(!id.fingerprint||!id.privateKey)return alert('Invalid identity file');
+    #|    await idPut('identity',id);location.reload();return;}catch{}
+    #|  }
+    #|  const input=document.createElement('input');input.type='file';input.accept='.json';
+    #|  input.onchange=async()=>{const f=input.files[0];if(!f)return;const id=JSON.parse(await f.text());
+    #|  if(!id.fingerprint||!id.privateKey)return alert('Invalid');await idPut('identity',id);location.reload();};input.click();
+    #|}
+    #|
+    #|// --- Workspace ---
     #|const WS_KEY='bithub_workspaces';
     #|function getWorkspaces(){try{return JSON.parse(localStorage.getItem(WS_KEY)||'[]');}catch{return [];}}
     #|function saveWorkspace(ws){const all=getWorkspaces().filter(w=>w.id!==ws.id);all.unshift(ws);localStorage.setItem(WS_KEY,JSON.stringify(all.slice(0,10)));}
-    #|function renderRecent(){const el=document.getElementById('ws-recent-list');if(!el)return;const ws=getWorkspaces();el.innerHTML='';ws.forEach(w=>{const a=document.createElement('a');a.href='/filer?ws='+w.id;a.textContent=w.repo+' — '+w.user+' ('+new Date(w.created).toLocaleDateString()+')';el.appendChild(a);});}
-    #|document.addEventListener('DOMContentLoaded',renderRecent);
-    #|async function createWorkspace(e){
+    #|
+    #|async function updateDisplayName(){
+    #|  const name=document.getElementById('id-name').value.trim();
+    #|  const id=await idGet('identity');if(!id)return;
+    #|  id.displayName=name;await idPut('identity',id);
+    #|  document.getElementById('id-status').textContent='Saved';setTimeout(()=>document.getElementById('id-status').textContent='',1500);
+    #|}
+    #|
+    #|async function openWorkspace(e){
     #|  e.preventDefault();
-    #|  const user=document.getElementById('ws-user').value.trim();
     #|  const repo=document.getElementById('ws-repo').value.trim();
-    #|  if(!user||!repo)return alert('Please fill in both fields');
-    #|  const btn=e.target.querySelector('button');btn.disabled=true;btn.textContent='Creating...';
-    #|  const id=repo.replace(/\//g,'-')+'-'+Date.now().toString(36);
+    #|  if(!repo||!repo.includes('/'))return alert('Enter owner/repo');
+    #|  const btn=document.getElementById('ws-btn');btn.disabled=true;btn.textContent='Cloning...';
+    #|  const id=await loadOrCreateIdentity();
+    #|  const wsId=repo.replace(/\//g,'-')+'-'+Date.now().toString(36);
     #|  try{
     #|    const r=await(await fetch('/api/init?repo='+repo,{method:'POST'})).json();
     #|    if(!r.ok){btn.textContent='Error: '+(r.error||'?');btn.disabled=false;return;}
-    #|    saveWorkspace({id,user,repo,created:Date.now(),files:r.files});
-    #|    localStorage.setItem('bithub_user',user);
+    #|    saveWorkspace({id:wsId,repo,user:id.displayName||id.fingerprint,fingerprint:id.fingerprint,created:Date.now(),files:r.files});
     #|    window.location.href='/filer';
-    #|  }catch(err){btn.textContent='Failed';btn.disabled=false;}
+    #|  }catch{btn.textContent='Failed';btn.disabled=false;}
     #|}
-    #|window.addEventListener('DOMContentLoaded',()=>{const u=localStorage.getItem('bithub_user');if(u)document.getElementById('ws-user').value=u;});
+    #|
+    #|// --- Init UI ---
+    #|async function initPage(){
+    #|  const id=await loadOrCreateIdentity();
+    #|  document.getElementById('id-name').value=id.displayName||'';
+    #|  document.getElementById('id-fp').textContent=id.fingerprint;
+    #|  // Recent workspaces
+    #|  const el=document.getElementById('ws-recent-list');
+    #|  getWorkspaces().forEach(w=>{const a=document.createElement('a');a.href='/filer?ws='+w.id;a.textContent=w.repo+' — '+(w.user||w.fingerprint);el.appendChild(a);});
+    #|}
+    #|document.addEventListener('DOMContentLoaded',initPage);
     #|</script>
   render_layout("bithub", [
     @luna.raw_html("<style>" + home_css + "</style>"),
     @luna.raw_html(
       #|<div class="landing">
       #|<h1>bithub</h1>
-      #|<p>Open a GitHub repository to browse, review, and collaborate.</p>
-      #|<form class="ws-form" onsubmit="createWorkspace(event)">
-      #|  <label>Your name</label>
-      #|  <input id="ws-user" placeholder="e.g. mizchi" required />
+      #|<p>Browse and collaborate on any GitHub repository.</p>
+      #|
+      #|<div class="section">
+      #|  <h2>Identity</h2>
+      #|  <label>Display Name</label>
+      #|  <input id="id-name" placeholder="anonymous" onchange="updateDisplayName()" />
+      #|  <div class="identity-info">Fingerprint: <code id="id-fp">loading...</code> <span id="id-status"></span></div>
+      #|  <div class="btn-row">
+      #|    <button class="btn btn-secondary" onclick="exportIdentity()">Export key</button>
+      #|    <button class="btn btn-secondary" onclick="importIdentity()">Import key</button>
+      #|  </div>
+      #|</div>
+      #|
+      #|<form class="section" onsubmit="openWorkspace(event)">
+      #|  <h2>Open Repository</h2>
       #|  <label>Repository (owner/repo)</label>
       #|  <input id="ws-repo" placeholder="e.g. bit-vcs/bit-relay" required />
-      #|  <button type="submit">Open workspace</button>
+      #|  <button id="ws-btn" class="btn" type="submit">Clone &amp; Open</button>
       #|</form>
+      #|
       #|<div class="ws-recent"><h3>Recent workspaces</h3><div id="ws-recent-list"></div></div>
       #|</div>
     ),
