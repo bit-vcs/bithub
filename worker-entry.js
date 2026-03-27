@@ -184,7 +184,7 @@ async function handleApiInit(request, env) {
   const ghApi = `https://api.github.com/repos/${owner}/${name}`;
   const headers = { "User-Agent": "bithub/0.1", Accept: "application/vnd.github.v3+json" };
   const ghToken = env.GITHUB_TOKEN;
-  if (ghToken) headers.Authorization = `token ${ghToken}`;
+  if (ghToken) headers.Authorization = `Bearer ${ghToken}`;
 
   try {
     // 1. Get default branch
@@ -215,9 +215,13 @@ async function handleApiInit(request, env) {
         const blobRes = await fetch(`${ghApi}/git/blobs/${entry.sha}`, { headers });
         if (!blobRes.ok) continue;
         const blobData = await blobRes.json();
-        const content = blobData.encoding === "base64"
-          ? atob(blobData.content.replace(/\n/g, ""))
-          : blobData.content;
+        let content;
+        if (blobData.encoding === "base64") {
+          const binary = Uint8Array.from(atob(blobData.content.replace(/\n/g, "")), c => c.charCodeAt(0));
+          content = new TextDecoder("utf-8").decode(binary);
+        } else {
+          content = blobData.content;
+        }
         await bucket.put(entry.path, content);
         fileCount++;
       } catch { /* skip individual file errors */ }
