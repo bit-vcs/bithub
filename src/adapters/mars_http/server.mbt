@@ -951,13 +951,11 @@ fn render_layout(
     #|  if(resttyLoaded)return true;
     #|  status.textContent='loading restty...';
     #|  try{
-    #|    const{Restty,getBuiltinTheme}=await import('https://esm.sh/restty@0.1.34');
-    #|    term=new Restty({root:container});
-    #|    const theme=getBuiltinTheme('Aizen Dark');
-    #|    if(theme)term.applyTheme(theme);
+    #|    const{Terminal}=await import('https://esm.sh/restty@0.1.34/xterm');
+    #|    term=new Terminal({cols:120,rows:20});
+    #|    term.open(container);
     #|    resttyLoaded=true;
     #|    status.textContent='';
-    #|    // Wire up command handling
     #|    let line='';
     #|    term.writeln('\x1b[36mbithub terminal v0.2 — powered by restty\x1b[0m');
     #|    term.writeln('\x1b[90mType "help" for commands. Ctrl-` to toggle.\x1b[0m');
@@ -986,7 +984,7 @@ fn render_layout(
     #|  const[cmd,...args]=input.split(/\s+/);
     #|  const CMDS={
     #|    help:()=>term.writeln('\x1b[90mCommands: help, clear, init <owner/repo>, issues, activity, participants, repo\x1b[0m'),
-    #|    clear:()=>term.clear(),
+    #|    clear:()=>{term.clear();term.reset();},
     #|    repo:async()=>{try{const r=await fetch('/_meta/repo');const m=await r.json();term.writeln(JSON.stringify(m,null,2));}catch{term.writeln('\x1b[31mNo repo initialized\x1b[0m');}},
     #|    issues:()=>{window.location.href='/issues';},
     #|    participants:async()=>{const repo=args[0]||'';const r=await fetch('/api/participants?repo='+repo);const d=await r.json().catch(()=>({}));const ps=d.participants||[];if(ps.length)ps.forEach(p=>term.writeln(p.participant_id+' ('+p.status+')'));else term.writeln('\x1b[90mNo active participants\x1b[0m');},
