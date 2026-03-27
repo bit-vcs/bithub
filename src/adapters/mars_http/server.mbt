@@ -798,19 +798,24 @@ fn render_home_page() -> String {
     #|    const r=await(await fetch('/api/init?repo='+repo,{method:'POST'})).json();
     #|    if(!r.ok){showProgress('Error: '+(r.error||'?'),100);btn.textContent='Retry';btn.disabled=false;return;}
     #|    showProgress('Server loaded '+r.files+' files. Caching locally...',60);
-    #|    // Cache to IndexedDB
+    #|    // Cache to IndexedDB (batch writes, parallel fetches)
     #|    const gh='https://api.github.com/repos/'+repo;
     #|    const ghH={Accept:'application/vnd.github.v3+json'};
     #|    let cached=0;
     #|    try{
     #|      const tr=await(await fetch(gh+'/git/trees/'+(r.default_branch||'main')+'?recursive=1',{headers:ghH})).json();
     #|      const blobs=(tr.tree||[]).filter(e=>e.type==='blob'&&e.size<50000).slice(0,200);
-    #|      for(let i=0;i<blobs.length;i++){
-    #|        const e=blobs[i];
-    #|        showProgress('Caching: '+e.path+' ('+(i+1)+'/'+blobs.length+')',60+Math.round(35*i/blobs.length));
-    #|        try{const b=await(await fetch(gh+'/git/blobs/'+e.sha,{headers:ghH})).json();
-    #|          if(b.encoding==='base64'){const bin=Uint8Array.from(atob(b.content.replace(/\n/g,'')),c=>c.charCodeAt(0));await cachePut(e.path,new TextDecoder().decode(bin));cached++;}
-    #|        }catch{}
+    #|      const CHUNK=10;
+    #|      for(let c=0;c<blobs.length;c+=CHUNK){
+    #|        const chunk=blobs.slice(c,c+CHUNK);
+    #|        showProgress('Caching files ('+(c+1)+'-'+Math.min(c+CHUNK,blobs.length)+'/'+blobs.length+')',60+Math.round(35*c/blobs.length));
+    #|        const results=await Promise.allSettled(chunk.map(async e=>{
+    #|          const b=await(await fetch(gh+'/git/blobs/'+e.sha,{headers:ghH})).json();
+    #|          if(b.encoding==='base64'){const bin=Uint8Array.from(atob(b.content.replace(/\n/g,'')),c=>c.charCodeAt(0));return[e.path,new TextDecoder().decode(bin)];}
+    #|          return null;
+    #|        }));
+    #|        const batch=results.filter(r=>r.status==='fulfilled'&&r.value).map(r=>r.value);
+    #|        if(batch.length>0){await cachePutBatch(batch);cached+=batch.length;}
     #|      }
     #|    }catch{}
     #|    showProgress('Done! '+r.files+' files ('+cached+' cached locally)',100);
@@ -885,7 +890,8 @@ fn render_filer_page(api : @core.ApiState, raw_path : String, workspace~ : Strin
     let filer_js =
       #|<script>
       #|const DB_NAME='bithub-blobs',DB_VER=1,STORE='blobs';
-      #|function openDB(){return new Promise((ok,ng)=>{const r=indexedDB.open(DB_NAME,DB_VER);r.onupgradeneeded=()=>r.result.createObjectStore(STORE);r.onsuccess=()=>ok(r.result);r.onerror=()=>ng(r.error);});}
+      #|let _dbP=null;
+      #|function openDB(){if(_dbP)return _dbP;_dbP=new Promise((ok,ng)=>{const r=indexedDB.open(DB_NAME,DB_VER);r.onupgradeneeded=()=>r.result.createObjectStore(STORE);r.onsuccess=()=>ok(r.result);r.onerror=()=>{_dbP=null;ng(r.error);};});return _dbP;}
       #|async function idbKeys(pfx){const db=await openDB();return new Promise(ok=>{const r=db.transaction(STORE).objectStore(STORE).getAllKeys();r.onsuccess=()=>ok((r.result||[]).filter(k=>typeof k==='string'&&k.startsWith(pfx)));r.onerror=()=>ok([]);});}
       #|
       #|async function renderFiler(){
@@ -978,7 +984,8 @@ fn render_file_page(api : @core.ApiState, raw_path : String, workspace~ : String
     let file_js =
       #|<script>
       #|const DB_NAME='bithub-blobs',DB_VER=1,STORE='blobs';
-      #|function openDB(){return new Promise((ok,ng)=>{const r=indexedDB.open(DB_NAME,DB_VER);r.onupgradeneeded=()=>r.result.createObjectStore(STORE);r.onsuccess=()=>ok(r.result);r.onerror=()=>ng(r.error);});}
+      #|let _dbP=null;
+      #|function openDB(){if(_dbP)return _dbP;_dbP=new Promise((ok,ng)=>{const r=indexedDB.open(DB_NAME,DB_VER);r.onupgradeneeded=()=>r.result.createObjectStore(STORE);r.onsuccess=()=>ok(r.result);r.onerror=()=>{_dbP=null;ng(r.error);};});return _dbP;}
       #|async function idbGet(k){const db=await openDB();return new Promise(ok=>{const r=db.transaction(STORE).objectStore(STORE).get(k);r.onsuccess=()=>ok(r.result??null);r.onerror=()=>ok(null);});}
       #|
       #|async function renderFile(){
@@ -1305,9 +1312,12 @@ fn render_layout(
     #|// --- Unified Storage: File System Access API → IndexedDB fallback ---
     #|let fsRoot=null; // FileSystemDirectoryHandle or null
     #|const DB_NAME='bithub-blobs',DB_VER=1,STORE='blobs';
-    #|function openDB(){return new Promise((ok,ng)=>{const r=indexedDB.open(DB_NAME,DB_VER);r.onupgradeneeded=()=>r.result.createObjectStore(STORE);r.onsuccess=()=>ok(r.result);r.onerror=()=>ng(r.error);});}
+    #|let _dbP=null;
+    #|function openDB(){if(_dbP)return _dbP;_dbP=new Promise((ok,ng)=>{const r=indexedDB.open(DB_NAME,DB_VER);r.onupgradeneeded=()=>r.result.createObjectStore(STORE);r.onsuccess=()=>ok(r.result);r.onerror=()=>{_dbP=null;ng(r.error);};});return _dbP;}
     #|async function idbGet(k){const db=await openDB();return new Promise(ok=>{const r=db.transaction(STORE).objectStore(STORE).get(k);r.onsuccess=()=>ok(r.result??null);r.onerror=()=>ok(null);});}
     #|async function idbPut(k,v){const db=await openDB();return new Promise(ok=>{const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).put(v,k);tx.oncomplete=()=>ok();});}
+    #|async function idbPutBatch(entries){const db=await openDB();return new Promise((ok,ng)=>{const tx=db.transaction(STORE,'readwrite');const s=tx.objectStore(STORE);for(const[k,v]of entries)s.put(v,k);tx.oncomplete=()=>ok();tx.onerror=()=>ng(tx.error);});}
+    #|async function idbGetBatch(keys){const db=await openDB();return new Promise(ok=>{const tx=db.transaction(STORE);const s=tx.objectStore(STORE);const out=new Array(keys.length);let n=0;keys.forEach((k,i)=>{const r=s.get(k);r.onsuccess=()=>{out[i]=r.result??null;if(++n===keys.length)ok(out);};r.onerror=()=>{out[i]=null;if(++n===keys.length)ok(out);};});if(!keys.length)ok(out);});}
     #|async function idbKeys(pfx){const db=await openDB();return new Promise(ok=>{const r=db.transaction(STORE).objectStore(STORE).getAllKeys();r.onsuccess=()=>ok((r.result||[]).filter(k=>typeof k==='string'&&k.startsWith(pfx)));r.onerror=()=>ok([]);});}
     #|async function idbClear(){const db=await openDB();return new Promise(ok=>{const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).clear();tx.oncomplete=()=>ok();});}
     #|
@@ -1339,6 +1349,7 @@ fn render_layout(
     #|// Unified: FS → IDB
     #|async function cacheGet(key){const v=await fsRead(key);if(v!==null)return v;return idbGet('file:'+key);}
     #|async function cachePut(key,val){if(fsRoot)await fsWrite(key,val);else await idbPut('file:'+key,val);}
+    #|async function cachePutBatch(entries){if(fsRoot){for(const[k,v]of entries)await fsWrite(k,v);}else await idbPutBatch(entries.map(([k,v])=>['file:'+k,v]));}
     #|async function cacheKeys(prefix){if(fsRoot)return fsList(prefix);return(await idbKeys('file:'+prefix)).map(k=>k.replace('file:',''));}
     #|async function cacheClear(){if(fsRoot){/* can't clear FS easily */}else await idbClear();}
     #|function storageMode(){return fsRoot?'filesystem':'indexeddb';}
@@ -1397,17 +1408,23 @@ fn render_layout(
     #|    const r=await(await fetch('/api/init?repo='+a[0],{method:'POST'})).json().catch(()=>({}));
     #|    if(!r.ok)return tw('Error: '+(r.error||'?'),'t-err');
     #|    tw('Server: '+r.files+' files loaded to R2','t-ok');
-    #|    // Cache files locally in IndexedDB via GitHub API
+    #|    // Cache files locally in IndexedDB via GitHub API (batch)
     #|    tw('Caching to IndexedDB...','t-info');
     #|    const gh='https://api.github.com/repos/'+a[0];
     #|    try{
     #|      const tr=await(await fetch(gh+'/git/trees/'+(r.default_branch||'main')+'?recursive=1')).json();
-    #|      let n=0;
-    #|      for(const e of (tr.tree||[]).slice(0,200)){
-    #|        if(e.type!=='blob'||e.size>50000)continue;
-    #|        try{const b=await(await fetch(gh+'/git/blobs/'+e.sha)).json();
-    #|          if(b.encoding==='base64'){const bin=Uint8Array.from(atob(b.content.replace(/\n/g,'')),c=>c.charCodeAt(0));await cachePut(e.path,new TextDecoder().decode(bin));n++;}
-    #|        }catch{}
+    #|      const blobs=(tr.tree||[]).filter(e=>e.type==='blob'&&e.size<50000).slice(0,200);
+    #|      let n=0;const CHUNK=10;
+    #|      for(let c=0;c<blobs.length;c+=CHUNK){
+    #|        const chunk=blobs.slice(c,c+CHUNK);
+    #|        tw('Fetching '+(c+1)+'-'+Math.min(c+CHUNK,blobs.length)+'/'+blobs.length+'...','t-info');
+    #|        const results=await Promise.allSettled(chunk.map(async e=>{
+    #|          const b=await(await fetch(gh+'/git/blobs/'+e.sha)).json();
+    #|          if(b.encoding==='base64'){const bin=Uint8Array.from(atob(b.content.replace(/\n/g,'')),c=>c.charCodeAt(0));return[e.path,new TextDecoder().decode(bin)];}
+    #|          return null;
+    #|        }));
+    #|        const batch=results.filter(r=>r.status==='fulfilled'&&r.value).map(r=>r.value);
+    #|        if(batch.length>0){await cachePutBatch(batch);n+=batch.length;}
     #|      }
     #|      tw('IndexedDB: '+n+' files cached','t-ok');
     #|    }catch(e){tw('IndexedDB cache failed: '+e.message,'t-err');}
