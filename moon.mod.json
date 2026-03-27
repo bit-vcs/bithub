@@ -4,7 +4,7 @@
   "deps": {
     "moonbitlang/async": "0.16.8",
     "mizchi/mars": "0.3.9",
-    "mizchi/bit": "0.32.0",
+    "mizchi/bit": "0.36.0",
     "mizchi/markdown": "0.4.7",
     "mizchi/luna": "0.16.0",
     "moonbitlang/x": "0.4.41",

@@ -773,6 +773,11 @@ fn render_home_page() -> String {
       #|    <button class="btn btn-secondary" onclick="exportIdentity()">Export key</button>
       #|    <button class="btn btn-secondary" onclick="importIdentity()">Import key</button>
       #|  </div>
+      #|  <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+      #|    <label>Storage</label>
+      #|    <div class="identity-info">Mode: <code id="storage-mode">indexeddb</code></div>
+      #|    <button class="btn btn-secondary" style="margin-top:8px;" onclick="connectFS()">Connect File System</button>
+      #|  </div>
       #|</div>
       #|
       #|<form class="section" onsubmit="openWorkspace(event)">
@@ -1075,27 +1080,73 @@ fn render_layout(
     #|document.addEventListener('keydown',e=>{if(e.key==='`'&&e.ctrlKey){e.preventDefault();toggleTerminal();}});
     #|function tw(t,c){const d=document.createElement('div');d.textContent=t;if(c)d.className=c;O.appendChild(d);O.scrollTop=1e9;}
     #|
-    #|// --- IndexedDB blob cache ---
+    #|// --- Unified Storage: File System Access API → IndexedDB fallback ---
+    #|let fsRoot=null; // FileSystemDirectoryHandle or null
     #|const DB_NAME='bithub-blobs',DB_VER=1,STORE='blobs';
     #|function openDB(){return new Promise((ok,ng)=>{const r=indexedDB.open(DB_NAME,DB_VER);r.onupgradeneeded=()=>r.result.createObjectStore(STORE);r.onsuccess=()=>ok(r.result);r.onerror=()=>ng(r.error);});}
-    #|async function cacheGet(key){const db=await openDB();return new Promise(ok=>{const tx=db.transaction(STORE);const r=tx.objectStore(STORE).get(key);r.onsuccess=()=>ok(r.result??null);r.onerror=()=>ok(null);});}
-    #|async function cachePut(key,val){const db=await openDB();return new Promise(ok=>{const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).put(val,key);tx.oncomplete=()=>ok();tx.onerror=()=>ok();});}
-    #|async function cacheKeys(prefix){const db=await openDB();return new Promise(ok=>{const tx=db.transaction(STORE);const r=tx.objectStore(STORE).getAllKeys();r.onsuccess=()=>ok((r.result||[]).filter(k=>typeof k==='string'&&k.startsWith(prefix)));r.onerror=()=>ok([]);});}
-    #|async function cacheClear(){const db=await openDB();return new Promise(ok=>{const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).clear();tx.oncomplete=()=>ok();tx.onerror=()=>ok();});}
+    #|async function idbGet(k){const db=await openDB();return new Promise(ok=>{const r=db.transaction(STORE).objectStore(STORE).get(k);r.onsuccess=()=>ok(r.result??null);r.onerror=()=>ok(null);});}
+    #|async function idbPut(k,v){const db=await openDB();return new Promise(ok=>{const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).put(v,k);tx.oncomplete=()=>ok();});}
+    #|async function idbKeys(pfx){const db=await openDB();return new Promise(ok=>{const r=db.transaction(STORE).objectStore(STORE).getAllKeys();r.onsuccess=()=>ok((r.result||[]).filter(k=>typeof k==='string'&&k.startsWith(pfx)));r.onerror=()=>ok([]);});}
+    #|async function idbClear(){const db=await openDB();return new Promise(ok=>{const tx=db.transaction(STORE,'readwrite');tx.objectStore(STORE).clear();tx.oncomplete=()=>ok();});}
     #|
-    #|// Cache-first file fetch: IndexedDB → server
-    #|async function cachedFile(path){
-    #|  const cached=await cacheGet('file:'+path);
-    #|  if(cached)return cached;
-    #|  const r=await fetch('/file?path='+encodeURIComponent(path));
-    #|  if(!r.ok)return null;
-    #|  const text=await r.text();
-    #|  await cachePut('file:'+path,text);
-    #|  return text;
+    #|// File System Access helpers
+    #|async function fsGetDir(root,parts){let d=root;for(const p of parts){d=await d.getDirectoryHandle(p,{create:true});}return d;}
+    #|async function fsRead(path){
+    #|  if(!fsRoot)return null;
+    #|  const parts=path.split('/');const name=parts.pop();
+    #|  try{const dir=parts.length?await fsGetDir(fsRoot,parts):fsRoot;const fh=await dir.getFileHandle(name);const f=await fh.getFile();return await f.text();}
+    #|  catch{return null;}
+    #|}
+    #|async function fsWrite(path,content){
+    #|  if(!fsRoot)return;
+    #|  const parts=path.split('/');const name=parts.pop();
+    #|  const dir=parts.length?await fsGetDir(fsRoot,parts):fsRoot;
+    #|  const fh=await dir.getFileHandle(name,{create:true});const ws=await fh.createWritable();await ws.write(content);await ws.close();
+    #|}
+    #|async function fsList(prefix){
+    #|  if(!fsRoot)return[];
+    #|  const parts=prefix?prefix.replace(/\/$/,'').split('/'):[];
+    #|  const results=[];
+    #|  try{
+    #|    const dir=parts.length?await fsGetDir(fsRoot,parts):fsRoot;
+    #|    for await(const[name,handle]of dir){results.push((prefix||'')+name+(handle.kind==='directory'?'/':''));}
+    #|  }catch{}
+    #|  return results;
     #|}
     #|
+    #|// Unified: FS → IDB
+    #|async function cacheGet(key){const v=await fsRead(key);if(v!==null)return v;return idbGet('file:'+key);}
+    #|async function cachePut(key,val){if(fsRoot)await fsWrite(key,val);else await idbPut('file:'+key,val);}
+    #|async function cacheKeys(prefix){if(fsRoot)return fsList(prefix);return(await idbKeys('file:'+prefix)).map(k=>k.replace('file:',''));}
+    #|async function cacheClear(){if(fsRoot){/* can't clear FS easily */}else await idbClear();}
+    #|function storageMode(){return fsRoot?'filesystem':'indexeddb';}
+    #|
+    #|// Connect FS button handler
+    #|async function connectFS(){
+    #|  if(!window.showDirectoryPicker)return alert('File System Access API not supported in this browser. Using IndexedDB.');
+    #|  try{
+    #|    fsRoot=await window.showDirectoryPicker({mode:'readwrite'});
+    #|    // Persist handle in IndexedDB for re-use
+    #|    await idbPut('_fs_handle',fsRoot);
+    #|    document.getElementById('storage-mode').textContent='filesystem: '+fsRoot.name;
+    #|  }catch{/* user cancelled */}
+    #|}
+    #|// Try restoring saved handle on load
+    #|async function tryRestoreFS(){
+    #|  const h=await idbGet('_fs_handle');
+    #|  if(h&&h.queryPermission){
+    #|    const perm=await h.queryPermission({mode:'readwrite'});
+    #|    if(perm==='granted'){fsRoot=h;return true;}
+    #|    // Try requesting
+    #|    const req=await h.requestPermission({mode:'readwrite'}).catch(()=>'denied');
+    #|    if(req==='granted'){fsRoot=h;return true;}
+    #|  }
+    #|  return false;
+    #|}
+    #|
+    #|tryRestoreFS().then(ok=>{if(ok)document.getElementById('storage-mode').textContent='filesystem: '+fsRoot.name;});
     #|tw('bithub terminal — Ctrl-` to toggle','t-info');
-    #|tw('Type "help" for commands.','t-info');
+    #|tw('Storage: '+storageMode()+'. Type "help" for commands.','t-info');
     #|const C={
     #|  help:()=>tw('Commands: help, clear, init <owner/repo>, cat <path>, ls [path], cache, cache-clear, issues, activity, participants, repo','t-info'),
     #|  clear:()=>{O.innerHTML='';},
