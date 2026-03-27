@@ -565,10 +565,7 @@ pub fn create_app_with_storage(api : @core.ApiState) -> @mars.Server {
       if route == "/healthz" {
         return ctx.text(@core.healthz_text())
       }
-      // Extract workspace prefix: /workspace/{id}/... → ws="id", sub_route="..."
-      let mut ws : String = ""
-      let mut sub_route : String = route
-      let mut sub_raw : String = raw_path
+      // Workspace: full SPA — serve same shell for all paths
       if route.has_prefix("/workspace/") {
         let rest = String::unsafe_substring(
           route,
@@ -576,28 +573,14 @@ pub fn create_app_with_storage(api : @core.ApiState) -> @mars.Server {
           end=route.length(),
         )
         let slash = find_char(rest, '/')
-        if slash >= 0 {
-          ws = String::unsafe_substring(rest, start=0, end=slash)
-          sub_route = String::unsafe_substring(
-            rest,
-            start=slash,
-            end=rest.length(),
-          )
-          // Adjust raw_path for query_param extraction
-          let prefix_len = "/workspace/".length() + ws.length()
-          sub_raw = String::unsafe_substring(
-            raw_path,
-            start=prefix_len,
-            end=raw_path.length(),
-          )
+        let ws = if slash >= 0 {
+          String::unsafe_substring(rest, start=0, end=slash)
         } else {
-          // /workspace/{id} with no trailing path → root browse
-          ws = rest
-          sub_route = "/"
-          sub_raw = "/"
+          rest
         }
+        return ctx.html(render_workspace_spa(ws), status=200)
       }
-      dispatch_route(api, ctx, ws, sub_route, sub_raw)
+      dispatch_route(api, ctx, "", route, raw_path)
     }),
   )
   app
@@ -742,6 +725,156 @@ fn dispatch_route(
     )
   }
   ctx.text("Not Found", status=404)
+}
+
+///|
+fn render_workspace_spa(ws : String) -> String {
+  let prefix = "/workspace/" + ws
+  let ws_title = ws.replace_all(old="-", new="/")
+  let spa_js =
+    #|<script>
+    #|// --- IndexedDB helpers ---
+    #|const DB_NAME='bithub-blobs',DB_VER=1,STORE='blobs';
+    #|let _dbP=null;
+    #|function openDB(){if(_dbP)return _dbP;_dbP=new Promise((ok,ng)=>{const r=indexedDB.open(DB_NAME,DB_VER);r.onupgradeneeded=()=>r.result.createObjectStore(STORE);r.onsuccess=()=>ok(r.result);r.onerror=()=>{_dbP=null;ng(r.error);};});return _dbP;}
+    #|async function idbGet(k){const db=await openDB();return new Promise(ok=>{const r=db.transaction(STORE).objectStore(STORE).get(k);r.onsuccess=()=>ok(r.result??null);r.onerror=()=>ok(null);});}
+    #|async function idbPut(k,v){const db=await openDB();return new Promise((ok,ng)=>{const tx=db.transaction(STORE,'readwrite');const s=tx.objectStore(STORE);s.put(v,k);tx.oncomplete=()=>ok();tx.onerror=()=>ng(tx.error);});}
+    #|async function idbKeys(pfx){const db=await openDB();return new Promise(ok=>{const r=db.transaction(STORE).objectStore(STORE).getAllKeys();r.onsuccess=()=>ok((r.result||[]).filter(k=>typeof k==='string'&&k.startsWith(pfx)));r.onerror=()=>ok([]);});}
+    #|function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+    #|
+    #|// --- SPA Router ---
+    #|const WS_PREFIX=document.body.dataset.wsPrefix;
+    #|const WS_ID=document.body.dataset.wsId;
+    #|const KEY_PFX='ws:'+WS_ID+':file:';
+    #|
+    #|function subPath(){
+    #|  const full=location.pathname;
+    #|  const base=WS_PREFIX+'/';
+    #|  return full.startsWith(base)?full.slice(base.length):(full===WS_PREFIX?'':full.slice(WS_PREFIX.length+1));
+    #|}
+    #|
+    #|// Known SPA routes
+    #|const ROUTES=['commits','branches','issues','pulls','activity','actions','readme','search','filer','file','stats','tags','webhooks'];
+    #|
+    #|async function navigate(path,push){
+    #|  if(push)history.pushState(null,'',WS_PREFIX+'/'+(path||''));
+    #|  const title=document.getElementById('spa-title');
+    #|  const content=document.getElementById('spa-content');
+    #|  const route=path.split('/')[0]||'';
+    #|  if(ROUTES.includes(route)){
+    #|    if(route==='commits')return renderCommits(title,content);
+    #|    // Other known routes: show placeholder
+    #|    title.textContent=route;
+    #|    content.innerHTML='<p>'+esc(route)+' view — coming soon for local workspace</p>';
+    #|    return;
+    #|  }
+    #|  // File/directory browse
+    #|  return renderBrowse(path,title,content);
+    #|}
+    #|
+    #|// --- Browse (file/dir auto-detect) ---
+    #|async function renderBrowse(path,title,content){
+    #|  const fileContent=await idbGet(KEY_PFX+path);
+    #|  if(fileContent!==null)return renderFile(path,fileContent,title,content);
+    #|  // Directory
+    #|  const allKeys=await idbKeys(KEY_PFX);
+    #|  const seen=new Set();const entries=[];
+    #|  for(const k of allKeys){
+    #|    const rel=k.slice(KEY_PFX.length);
+    #|    if(path&&!rel.startsWith(path+'/'))continue;
+    #|    const sub=path?rel.slice(path.length+1):rel;
+    #|    if(!sub)continue;
+    #|    const slash=sub.indexOf('/');
+    #|    if(slash<0)entries.push({name:sub,full:rel,dir:false});
+    #|    else{const d=sub.slice(0,slash),dp=path?path+'/'+d:d;if(!seen.has(dp)){seen.add(dp);entries.push({name:d,full:dp,dir:true});}}
+    #|  }
+    #|  entries.sort((a,b)=>a.dir===b.dir?a.name.localeCompare(b.name):(a.dir?-1:1));
+    #|  title.textContent=path?path+'/':'/';
+    #|  if(!entries.length){content.innerHTML='<p>(empty)</p>';return;}
+    #|  let h='<ul class="browse-list">';
+    #|  if(path){const p=path.includes('/')?path.slice(0,path.lastIndexOf('/')):'';h+='<li><a href="'+WS_PREFIX+'/'+p+'" data-spa>..</a></li>';}
+    #|  for(const e of entries){h+='<li><a href="'+WS_PREFIX+'/'+e.full+'" data-spa>'+(e.dir?'\u{1F4C1} '+e.name+'/':'\u{1F4C4} '+e.name)+'</a></li>';}
+    #|  h+='</ul>';
+    #|  content.innerHTML=h;
+    #|}
+    #|
+    #|// --- File view ---
+    #|let _editPath=null;
+    #|function renderFile(path,text,title,content){
+    #|  _editPath=path;
+    #|  title.textContent=path;
+    #|  content.innerHTML='<div class="file-toolbar"><button class="btn btn-sm" onclick="startEdit()">Edit</button></div><pre class="source-code"><code>'+esc(text)+'</code></pre>';
+    #|}
+    #|async function startEdit(){
+    #|  const c=document.getElementById('spa-content');
+    #|  const text=await idbGet(KEY_PFX+_editPath)||'';
+    #|  c.innerHTML='<div class="file-toolbar"><button class="btn btn-sm" onclick="saveEdit()">Save</button> <button class="btn btn-sm btn-secondary" onclick="navigate(subPath(),false)">Cancel</button></div><textarea id="editor">'+esc(text)+'</textarea>';
+    #|  const ta=document.getElementById('editor');
+    #|  ta.addEventListener('keydown',e=>{if(e.key==='Tab'){e.preventDefault();const s=ta.selectionStart,end=ta.selectionEnd;ta.value=ta.value.substring(0,s)+'  '+ta.value.substring(end);ta.selectionStart=ta.selectionEnd=s+2;}});
+    #|}
+    #|async function saveEdit(){
+    #|  const ta=document.getElementById('editor');
+    #|  if(!ta)return;
+    #|  await idbPut(KEY_PFX+_editPath,ta.value);
+    #|  navigate(subPath(),false);
+    #|}
+    #|
+    #|// --- Commits ---
+    #|async function renderCommits(title,content){
+    #|  title.textContent='commits';
+    #|  const commitKeys=await idbKeys('ws:'+WS_ID+':commit:');
+    #|  if(!commitKeys.length){content.innerHTML='<p>No commits cached locally.</p>';return;}
+    #|  const commits=[];
+    #|  for(const k of commitKeys){const v=await idbGet(k);if(v)try{commits.push(JSON.parse(v));}catch{}}
+    #|  commits.sort((a,b)=>new Date(b.date)-new Date(a.date));
+    #|  let h='<table class="wf-table"><thead><tr><th>SHA</th><th>Message</th><th>Author</th><th>Date</th></tr></thead><tbody>';
+    #|  for(const c of commits){h+='<tr><td><code>'+esc((c.sha||'').slice(0,8))+'</code></td><td>'+esc((c.message||'').split('\n')[0])+'</td><td>'+esc(c.author||'')+'</td><td>'+esc(c.date?new Date(c.date).toLocaleDateString():'')+'</td></tr>';}
+    #|  h+='</tbody></table>';
+    #|  content.innerHTML=h;
+    #|}
+    #|
+    #|// --- SPA link interception ---
+    #|document.addEventListener('click',e=>{
+    #|  const a=e.target.closest('a[data-spa],nav.site-nav-repo a');
+    #|  if(!a)return;
+    #|  const href=a.getAttribute('href');
+    #|  if(!href||!href.startsWith(WS_PREFIX))return;
+    #|  e.preventDefault();
+    #|  const path=href.slice(WS_PREFIX.length+1);
+    #|  navigate(path,true);
+    #|});
+    #|window.addEventListener('popstate',()=>navigate(subPath(),false));
+    #|
+    #|// Initial render
+    #|navigate(subPath(),false);
+    #|</script>
+  let spa_css =
+    #|<style>
+    #|.browse-list{list-style:none;padding:0;}.browse-list li{padding:4px 0;border-bottom:1px solid var(--border);}
+    #|.browse-list a{text-decoration:none;color:var(--link);display:block;padding:4px 8px;border-radius:4px;}
+    #|.browse-list a:hover{background:var(--pre);}
+    #|.btn-sm{padding:4px 12px;font-size:13px;background:#238636;color:#fff;border:none;border-radius:4px;cursor:pointer;}
+    #|.btn-sm:hover{background:#2ea043;}
+    #|.btn-secondary{background:var(--panel);color:var(--text);border:1px solid var(--border);}
+    #|.btn-secondary:hover{background:var(--pre);}
+    #|.file-toolbar{display:flex;gap:8px;margin:8px 0;}
+    #|#editor{width:100%;min-height:400px;font-family:ui-monospace,Menlo,monospace;font-size:13px;line-height:1.5;background:var(--pre);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:12px;resize:vertical;tab-size:2;box-sizing:border-box;}
+    #|</style>
+  render_layout(
+    "workspace",
+    [
+      @luna.h("h1", [("id", @luna.attr_static("spa-title"))], [
+        @luna.text("loading..."),
+      ]),
+      @luna.h("div", [("id", @luna.attr_static("spa-content"))], [
+        @luna.text("loading..."),
+      ]),
+      @luna.raw_html(
+        "<script>document.body.dataset.wsPrefix='" + prefix + "';document.body.dataset.wsId='" + ws + "';</script>",
+      ),
+    ],
+    workspace=ws,
+  ) + spa_css + spa_js
 }
 
 ///|
