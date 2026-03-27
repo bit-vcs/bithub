@@ -68,9 +68,11 @@ async function preloadForRoute(env, pathname) {
     routePath = slash >= 0 ? rest.slice(slash) : "/filer";
   }
 
-  // Workspace filer/file are client-side only (IndexedDB) — skip R2 preload
-  if (isWorkspace && (routePath.startsWith("/filer") || routePath.startsWith("/file"))) {
-    return; // no R2 data needed
+  // Workspace filer/file/browse are client-side only (IndexedDB) — skip R2 preload
+  // Known server routes that need R2: /issues, /pulls, /commits, /branches, /activity, /actions, /stats, /tags, /webhooks
+  const wsServerRoutes = ["/issues", "/pulls", "/commits", "/commit/", "/branches", "/activity", "/actions", "/stats", "/tags", "/webhooks", "/readme", "/search", "/blame", "/compare/", "/feed.xml"];
+  if (isWorkspace && !wsServerRoutes.some(r => routePath === r || routePath.startsWith(r))) {
+    return; // file/dir browse from IndexedDB, no R2 needed
   }
 
   // Route-based prefixes

@@ -591,10 +591,10 @@ pub fn create_app_with_storage(api : @core.ApiState) -> @mars.Server {
             end=raw_path.length(),
           )
         } else {
-          // /workspace/{id} with no trailing path → redirect to filer
+          // /workspace/{id} with no trailing path → root browse
           ws = rest
-          sub_route = "/filer"
-          sub_raw = "/filer"
+          sub_route = "/"
+          sub_raw = "/"
         }
       }
       dispatch_route(api, ctx, ws, sub_route, sub_raw)
@@ -611,6 +611,10 @@ fn dispatch_route(
   route : String,
   raw_path : String,
 ) -> Unit {
+  // Workspace root → browse root directory
+  if ws.length() > 0 && route == "/" {
+    return ctx.html(render_browse_page("", workspace=ws), status=200)
+  }
   if route == "/readme" {
     return ctx.html(render_readme_page(api, workspace=ws), status=200)
   }
@@ -724,7 +728,100 @@ fn dispatch_route(
   if route == "/actions" {
     return ctx.html(render_ci_page(api, workspace=ws), status=200)
   }
+  // Workspace: treat unmatched paths as file/dir browser
+  if ws.length() > 0 {
+    // Strip leading "/" from route to get the file path
+    let file_path = if route.has_prefix("/") {
+      String::unsafe_substring(route, start=1, end=route.length())
+    } else {
+      route
+    }
+    return ctx.html(
+      render_browse_page(file_path, workspace=ws),
+      status=200,
+    )
+  }
   ctx.text("Not Found", status=404)
+}
+
+///|
+fn render_browse_page(file_path : String, workspace~ : String = "") -> String {
+  let prefix = "/workspace/" + workspace
+  let browse_js =
+    #|<script>
+    #|const DB_NAME='bithub-blobs',DB_VER=1,STORE='blobs';
+    #|let _dbP=null;
+    #|function openDB(){if(_dbP)return _dbP;_dbP=new Promise((ok,ng)=>{const r=indexedDB.open(DB_NAME,DB_VER);r.onupgradeneeded=()=>r.result.createObjectStore(STORE);r.onsuccess=()=>ok(r.result);r.onerror=()=>{_dbP=null;ng(r.error);};});return _dbP;}
+    #|async function idbGet(k){const db=await openDB();return new Promise(ok=>{const r=db.transaction(STORE).objectStore(STORE).get(k);r.onsuccess=()=>ok(r.result??null);r.onerror=()=>ok(null);});}
+    #|async function idbKeys(pfx){const db=await openDB();return new Promise(ok=>{const r=db.transaction(STORE).objectStore(STORE).getAllKeys();r.onsuccess=()=>ok((r.result||[]).filter(k=>typeof k==='string'&&k.startsWith(pfx)));r.onerror=()=>ok([]);});}
+    #|function escHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+    #|
+    #|async function renderBrowse(){
+    #|  const wsPrefix=document.body.dataset.wsPrefix;
+    #|  const wsId=wsPrefix.split('/').pop();
+    #|  const path=document.body.dataset.browsePath;
+    #|  const keyPfx='ws:'+wsId+':file:';
+    #|  // Check if exact file exists
+    #|  const fileContent=await idbGet(keyPfx+path);
+    #|  if(fileContent!==null){
+    #|    // Render as file
+    #|    document.getElementById('browse-title').textContent=path;
+    #|    const el=document.getElementById('browse-content');
+    #|    if(path.endsWith('.md')){el.innerHTML='<pre class="source-code"><code>'+escHtml(fileContent)+'</code></pre>';}
+    #|    else{el.innerHTML='<pre class="source-code"><code>'+escHtml(fileContent)+'</code></pre>';}
+    #|    return;
+    #|  }
+    #|  // Render as directory listing
+    #|  const dirPfx=path?keyPfx+path+'/':keyPfx;
+    #|  const allKeys=await idbKeys(keyPfx);
+    #|  const seen=new Set();
+    #|  const entries=[];
+    #|  for(const k of allKeys){
+    #|    const rel=k.slice(keyPfx.length);
+    #|    if(path&&!rel.startsWith(path+'/'))continue;
+    #|    const sub=path?rel.slice(path.length+1):rel;
+    #|    if(!sub)continue;
+    #|    const slash=sub.indexOf('/');
+    #|    if(slash<0){entries.push({name:sub,fullPath:rel,isDir:false});}
+    #|    else{const dir=sub.slice(0,slash);const dp=path?path+'/'+dir:dir;if(!seen.has(dp)){seen.add(dp);entries.push({name:dir,fullPath:dp,isDir:true});}}
+    #|  }
+    #|  entries.sort((a,b)=>(a.isDir===b.isDir?a.name.localeCompare(b.name):(a.isDir?-1:1)));
+    #|  document.getElementById('browse-title').textContent=path?path+'/':'/';
+    #|  const el=document.getElementById('browse-content');
+    #|  if(!entries.length){el.innerHTML='<p>(empty directory)</p>';return;}
+    #|  // Parent link
+    #|  let html='<ul class="browse-list">';
+    #|  if(path){const parent=path.includes('/')?path.slice(0,path.lastIndexOf('/')):'';html+='<li><a href="'+wsPrefix+'/'+parent+'">..</a></li>';}
+    #|  for(const e of entries){
+    #|    const href=wsPrefix+'/'+e.fullPath;
+    #|    html+='<li><a href="'+href+'">'+(e.isDir?'📁 '+e.name+'/':'📄 '+e.name)+'</a></li>';
+    #|  }
+    #|  html+='</ul>';
+    #|  el.innerHTML=html;
+    #|}
+    #|document.addEventListener('DOMContentLoaded',renderBrowse);
+    #|</script>
+  let browse_css =
+    #|<style>
+    #|.browse-list{list-style:none;padding:0;}.browse-list li{padding:4px 0;border-bottom:1px solid var(--border);}
+    #|.browse-list a{text-decoration:none;color:var(--link);display:block;padding:4px 8px;border-radius:4px;}
+    #|.browse-list a:hover{background:var(--pre);}
+    #|</style>
+  render_layout(
+    "browse",
+    [
+      @luna.h("h1", [("id", @luna.attr_static("browse-title"))], [
+        @luna.text("loading..."),
+      ]),
+      @luna.h("div", [("id", @luna.attr_static("browse-content"))], [
+        @luna.text("loading..."),
+      ]),
+      @luna.raw_html(
+        "<script>document.body.dataset.wsPrefix='" + prefix + "';document.body.dataset.browsePath='" + file_path + "';</script>",
+      ),
+    ],
+    workspace~,
+  ) + browse_css + browse_js
 }
 
 ///|
@@ -1323,7 +1420,7 @@ fn render_layout(
       @luna.text(" "),
       @components.link(prefix + "/readme", [@luna.text("README")]),
       @luna.text(" | "),
-      @components.link(prefix + "/filer", [@luna.text("filer")]),
+      @components.link(prefix + "/", [@luna.text("files")]),
       @luna.text(" | "),
       @components.link(prefix + "/commits", [@luna.text("commits")]),
       @luna.text(" | "),
