@@ -523,123 +523,166 @@ pub fn create_app_with_storage(api : @core.ApiState) -> @mars.Server {
       if route == "/healthz" {
         return ctx.text(@core.healthz_text())
       }
-      if route == "/readme" {
-        return ctx.html(render_readme_page(api), status=200)
-      }
-      if route == "/filer" {
-        let path = query_param(raw_path, "path").unwrap_or("")
-        return ctx.html(render_filer_page(api, path), status=200)
-      }
-      if route == "/file" {
-        let path = query_param(raw_path, "path").unwrap_or("")
-        let page = render_file_page(api, path)
-        return ctx.html(page.html, status=page.status)
-      }
-      if route == "/commits" {
-        return ctx.html(render_commits_page(api), status=200)
-      }
-      if route.has_prefix("/commit/") {
-        let sha = String::unsafe_substring(
+      // Extract workspace prefix: /workspace/{id}/... → ws="id", sub_route="..."
+      let mut ws : String = ""
+      let mut sub_route : String = route
+      let mut sub_raw : String = raw_path
+      if route.has_prefix("/workspace/") {
+        let rest = String::unsafe_substring(
           route,
-          start="/commit/".length(),
+          start="/workspace/".length(),
           end=route.length(),
         )
-        let page = render_commit_detail_page(api, sha)
-        return ctx.html(page.html, status=page.status)
-      }
-      if route == "/branches" {
-        return ctx.html(render_branches_page(api), status=200)
-      }
-      if route == "/search" {
-        let q = query_param(raw_path, "q").unwrap_or("")
-        return ctx.html(render_search_page(api, q), status=200)
-      }
-      if route == "/issues" {
-        return ctx.html(render_issues_page(api), status=200)
-      }
-      if route.has_prefix("/issues/") {
-        let id = String::unsafe_substring(
-          route,
-          start="/issues/".length(),
-          end=route.length(),
-        )
-        let page = render_issue_detail_page(api, id)
-        return ctx.html(page.html, status=page.status)
-      }
-      if route == "/activity" {
-        return ctx.html(render_activity_page(api), status=200)
-      }
-      if route.has_prefix("/compare/") {
-        let spec = String::unsafe_substring(
-          route,
-          start="/compare/".length(),
-          end=route.length(),
-        )
-        let page = render_compare_page(api, spec)
-        return ctx.html(page.html, status=page.status)
-      }
-      if route == "/webhooks" {
-        return ctx.html(render_webhooks_page(api), status=200)
-      }
-      if route == "/pulls" {
-        return ctx.html(render_pulls_page(api), status=200)
-      }
-      if route.has_prefix("/pulls/") {
-        let id = String::unsafe_substring(
-          route,
-          start="/pulls/".length(),
-          end=route.length(),
-        )
-        let page = render_pull_detail_page(api, id)
-        return ctx.html(page.html, status=page.status)
-      }
-      if route == "/tags" {
-        return ctx.html(render_tags_page(api), status=200)
-      }
-      if route == "/stats" {
-        return ctx.html(render_stats_page(api), status=200)
-      }
-      if route == "/feed.xml" {
-        let base_url = match ctx.header("Host") {
-          Some(host) => "https://" + host
-          None => ""
+        let slash = find_char(rest, '/')
+        if slash >= 0 {
+          ws = String::unsafe_substring(rest, start=0, end=slash)
+          sub_route = String::unsafe_substring(
+            rest,
+            start=slash,
+            end=rest.length(),
+          )
+          // Adjust raw_path for query_param extraction
+          let prefix_len = "/workspace/".length() + ws.length()
+          sub_raw = String::unsafe_substring(
+            raw_path,
+            start=prefix_len,
+            end=raw_path.length(),
+          )
+        } else {
+          // /workspace/{id} with no trailing path → redirect to filer
+          ws = rest
+          sub_route = "/filer"
+          sub_raw = "/filer"
         }
-        ctx.set_header("Content-Type", "application/rss+xml; charset=utf-8")
-        return ctx.text(api.activity_rss(base_url))
       }
-      if route == "/blame" {
-        let path = query_param(raw_path, "path").unwrap_or("")
-        let page = render_blame_page(api, path)
-        return ctx.html(page.html, status=page.status)
-      }
-      if route == "/actions/workflows" {
-        return ctx.html(render_workflows_page(api), status=200)
-      }
-      if route.has_prefix("/actions/workflows/") {
-        let file = String::unsafe_substring(
-          route,
-          start="/actions/workflows/".length(),
-          end=route.length(),
-        )
-        let page = render_workflow_detail_page(api, file)
-        return ctx.html(page.html, status=page.status)
-      }
-      if route.has_prefix("/actions/runs/") {
-        let id = String::unsafe_substring(
-          route,
-          start="/actions/runs/".length(),
-          end=route.length(),
-        )
-        let page = render_ci_run_detail_page(api, id)
-        return ctx.html(page.html, status=page.status)
-      }
-      if route == "/actions" {
-        return ctx.html(render_ci_page(api), status=200)
-      }
-      ctx.text("Not Found", status=404)
+      dispatch_route(api, ctx, ws, sub_route, sub_raw)
     }),
   )
   app
+}
+
+///|
+fn dispatch_route(
+  api : @core.ApiState,
+  ctx : @mars.Context,
+  ws : String,
+  route : String,
+  raw_path : String,
+) -> Unit {
+  if route == "/readme" {
+    return ctx.html(render_readme_page(api, workspace=ws), status=200)
+  }
+  if route == "/filer" {
+    let path = query_param(raw_path, "path").unwrap_or("")
+    return ctx.html(render_filer_page(api, path, workspace=ws), status=200)
+  }
+  if route == "/file" {
+    let path = query_param(raw_path, "path").unwrap_or("")
+    let page = render_file_page(api, path, workspace=ws)
+    return ctx.html(page.html, status=page.status)
+  }
+  if route == "/commits" {
+    return ctx.html(render_commits_page(api, workspace=ws), status=200)
+  }
+  if route.has_prefix("/commit/") {
+    let sha = String::unsafe_substring(
+      route,
+      start="/commit/".length(),
+      end=route.length(),
+    )
+    let page = render_commit_detail_page(api, sha, workspace=ws)
+    return ctx.html(page.html, status=page.status)
+  }
+  if route == "/branches" {
+    return ctx.html(render_branches_page(api, workspace=ws), status=200)
+  }
+  if route == "/search" {
+    let q = query_param(raw_path, "q").unwrap_or("")
+    return ctx.html(render_search_page(api, q, workspace=ws), status=200)
+  }
+  if route == "/issues" {
+    return ctx.html(render_issues_page(api, workspace=ws), status=200)
+  }
+  if route.has_prefix("/issues/") {
+    let id = String::unsafe_substring(
+      route,
+      start="/issues/".length(),
+      end=route.length(),
+    )
+    let page = render_issue_detail_page(api, id, workspace=ws)
+    return ctx.html(page.html, status=page.status)
+  }
+  if route == "/activity" {
+    return ctx.html(render_activity_page(api, workspace=ws), status=200)
+  }
+  if route.has_prefix("/compare/") {
+    let spec = String::unsafe_substring(
+      route,
+      start="/compare/".length(),
+      end=route.length(),
+    )
+    let page = render_compare_page(api, spec, workspace=ws)
+    return ctx.html(page.html, status=page.status)
+  }
+  if route == "/webhooks" {
+    return ctx.html(render_webhooks_page(api, workspace=ws), status=200)
+  }
+  if route == "/pulls" {
+    return ctx.html(render_pulls_page(api, workspace=ws), status=200)
+  }
+  if route.has_prefix("/pulls/") {
+    let id = String::unsafe_substring(
+      route,
+      start="/pulls/".length(),
+      end=route.length(),
+    )
+    let page = render_pull_detail_page(api, id, workspace=ws)
+    return ctx.html(page.html, status=page.status)
+  }
+  if route == "/tags" {
+    return ctx.html(render_tags_page(api, workspace=ws), status=200)
+  }
+  if route == "/stats" {
+    return ctx.html(render_stats_page(api, workspace=ws), status=200)
+  }
+  if route == "/feed.xml" {
+    let base_url = match ctx.header("Host") {
+      Some(host) => "https://" + host
+      None => ""
+    }
+    ctx.set_header("Content-Type", "application/rss+xml; charset=utf-8")
+    return ctx.text(api.activity_rss(base_url))
+  }
+  if route == "/blame" {
+    let path = query_param(raw_path, "path").unwrap_or("")
+    let page = render_blame_page(api, path, workspace=ws)
+    return ctx.html(page.html, status=page.status)
+  }
+  if route == "/actions/workflows" {
+    return ctx.html(render_workflows_page(api, workspace=ws), status=200)
+  }
+  if route.has_prefix("/actions/workflows/") {
+    let file = String::unsafe_substring(
+      route,
+      start="/actions/workflows/".length(),
+      end=route.length(),
+    )
+    let page = render_workflow_detail_page(api, file, workspace=ws)
+    return ctx.html(page.html, status=page.status)
+  }
+  if route.has_prefix("/actions/runs/") {
+    let id = String::unsafe_substring(
+      route,
+      start="/actions/runs/".length(),
+      end=route.length(),
+    )
+    let page = render_ci_run_detail_page(api, id, workspace=ws)
+    return ctx.html(page.html, status=page.status)
+  }
+  if route == "/actions" {
+    return ctx.html(render_ci_page(api, workspace=ws), status=200)
+  }
+  ctx.text("Not Found", status=404)
 }
 
 ///|
@@ -772,7 +815,7 @@ fn render_home_page() -> String {
     #|    }catch{}
     #|    showProgress('Done! '+r.files+' files ('+cached+' cached locally)',100);
     #|    saveWorkspace({id:wsId,repo,user:id.displayName||id.fingerprint,fingerprint:id.fingerprint,created:Date.now(),files:r.files});
-    #|    setTimeout(()=>{window.location.href='/filer';},500);
+    #|    setTimeout(()=>{window.location.href='/workspace/'+wsId+'/filer';},500);
     #|  }catch{showProgress('Failed',100);btn.textContent='Retry';btn.disabled=false;}
     #|}
     #|
@@ -783,7 +826,7 @@ fn render_home_page() -> String {
     #|  document.getElementById('id-fp').textContent=id.fingerprint;
     #|  // Recent workspaces
     #|  const el=document.getElementById('ws-recent-list');
-    #|  getWorkspaces().forEach(w=>{const a=document.createElement('a');a.href='/filer?ws='+w.id;a.textContent=w.repo+' — '+(w.user||w.fingerprint);el.appendChild(a);});
+    #|  getWorkspaces().forEach(w=>{const a=document.createElement('a');a.href='/workspace/'+w.id+'/filer';a.textContent=w.repo+' — '+(w.user||w.fingerprint);el.appendChild(a);});
     #|}
     #|document.addEventListener('DOMContentLoaded',initPage);
     #|</script>
@@ -825,26 +868,31 @@ fn render_home_page() -> String {
 }
 
 ///|
-fn render_readme_page(api : @core.ApiState) -> String {
+fn render_readme_page(api : @core.ApiState, workspace~ : String = "") -> String {
   let markdown = api.readme_markdown()
   let html = @markdown.md_to_html(markdown)
   render_layout("README.md", [
     @luna.h("h1", [], [@luna.text("README.md")]),
     @components.region(aria_label="README", [@luna.raw_html(html)]),
-  ])
+  ], workspace~)
 }
 
 ///|
-fn render_filer_page(api : @core.ApiState, raw_path : String) -> String {
+fn render_filer_page(api : @core.ApiState, raw_path : String, workspace~ : String = "") -> String {
   let path = normalize_path(raw_path)
   let entries = api.list_entries(path)
   let display_path = if path.length() == 0 { "/" } else { "/" + path }
+  let prefix = if workspace.length() > 0 {
+    "/workspace/" + workspace
+  } else {
+    ""
+  }
   let list_nodes : Array[@luna.Node[Unit, String]] = []
   for entry in entries {
     let href = if entry.is_dir {
-      "/filer?path=" + entry.path
+      prefix + "/filer?path=" + entry.path
     } else {
-      "/file?path=" + entry.path
+      prefix + "/file?path=" + entry.path
     }
     let suffix = if entry.is_dir { "/" } else { "" }
     let label = if entry.is_dir {
@@ -863,11 +911,11 @@ fn render_filer_page(api : @core.ApiState, raw_path : String) -> String {
     @luna.h("h1", [], [@luna.text("filer")]),
     @luna.h("p", [], [@luna.text("path: " + display_path)]),
     @luna.h("ul", [], list_nodes),
-  ])
+  ], workspace~)
 }
 
 ///|
-fn render_file_page(api : @core.ApiState, raw_path : String) -> PageHtml {
+fn render_file_page(api : @core.ApiState, raw_path : String, workspace~ : String = "") -> PageHtml {
   let result = api.lookup_file(raw_path)
   match result.content {
     Some(content) => {
@@ -893,7 +941,7 @@ fn render_file_page(api : @core.ApiState, raw_path : String) -> PageHtml {
       for node in body_nodes {
         content_nodes.push(node)
       }
-      { status: result.status, html: render_layout(result.path, content_nodes) }
+      { status: result.status, html: render_layout(result.path, content_nodes, workspace~) }
     }
     None => {
       let missing_title = if result.path.length() == 0 { "file" } else { result.path }
@@ -902,14 +950,14 @@ fn render_file_page(api : @core.ApiState, raw_path : String) -> PageHtml {
         html: render_layout(missing_title, [
           @luna.h("h1", [], [@luna.text(missing_title)]),
           @luna.h("p", [], [@luna.text("not found")]),
-        ]),
+        ], workspace~),
       }
     }
   }
 }
 
 ///|
-fn render_workflows_page(api : @core.ApiState) -> String {
+fn render_workflows_page(api : @core.ApiState, workspace~ : String = "") -> String {
   let workflows = api.list_workflows()
   let rows : Array[@luna.Node[Unit, String]] = []
   for wf in workflows {
@@ -951,13 +999,14 @@ fn render_workflows_page(api : @core.ApiState) -> String {
   render_layout("workflows", [
     @luna.h("h1", [], [@luna.text("Workflows")]),
     table,
-  ])
+  ], workspace~)
 }
 
 ///|
 fn render_workflow_detail_page(
   api : @core.ApiState,
   filename : String,
+  workspace~ : String = "",
 ) -> PageHtml {
   if filename.length() == 0 {
     return {
@@ -965,7 +1014,7 @@ fn render_workflow_detail_page(
       html: render_layout("workflow", [
         @luna.h("h1", [], [@luna.text("workflow")]),
         @luna.h("p", [], [@luna.text("usage: /actions/workflows/:file")]),
-      ]),
+      ], workspace~),
     }
   }
   match api.workflow_detail(filename) {
@@ -1012,14 +1061,14 @@ fn render_workflow_detail_page(
         )
         content.push(@luna.h("ol", [], step_nodes))
       }
-      { status: 200, html: render_layout(detail.name, content) }
+      { status: 200, html: render_layout(detail.name, content, workspace~) }
     }
     None => {
       status: 404,
       html: render_layout(filename, [
         @luna.h("h1", [], [@luna.text(filename)]),
         @luna.h("p", [], [@luna.text("workflow not found")]),
-      ]),
+      ], workspace~),
     }
   }
 }
@@ -1028,12 +1077,67 @@ fn render_workflow_detail_page(
 fn render_layout(
   title : String,
   content : Array[@luna.Node[Unit, String]],
+  workspace~ : String = "",
 ) -> String {
+  let prefix = if workspace.length() > 0 {
+    "/workspace/" + workspace
+  } else {
+    ""
+  }
+  // Top-level global nav
+  let global_nav : Array[@luna.Node[Unit, String]] = [
+    @components.link("/", [@luna.text("home")]),
+  ]
+  // Workspace-scoped nav (second layer)
+  let repo_nav : Array[@luna.Node[Unit, String]] = if workspace.length() > 0 {
+    let ws_title = workspace.replace_all(old="-", new="/")
+    [
+      @luna.h("strong", [], [@luna.text(ws_title)]),
+      @luna.text(" "),
+      @components.link(prefix + "/readme", [@luna.text("README")]),
+      @luna.text(" | "),
+      @components.link(prefix + "/filer", [@luna.text("filer")]),
+      @luna.text(" | "),
+      @components.link(prefix + "/commits", [@luna.text("commits")]),
+      @luna.text(" | "),
+      @components.link(prefix + "/branches", [@luna.text("branches")]),
+      @luna.text(" | "),
+      @components.link(prefix + "/issues", [@luna.text("issues")]),
+      @luna.text(" | "),
+      @components.link(prefix + "/pulls", [@luna.text("pulls")]),
+      @luna.text(" | "),
+      @components.link(prefix + "/activity", [@luna.text("activity")]),
+      @luna.text(" | "),
+      @components.link(prefix + "/search?q=", [@luna.text("search")]),
+      @luna.text(" | "),
+      @components.link(prefix + "/actions", [@luna.text("actions")]),
+    ]
+  } else {
+    [
+      @components.link("/readme", [@luna.text("README")]),
+      @luna.text(" | "),
+      @components.link("/filer", [@luna.text("filer")]),
+      @luna.text(" | "),
+      @components.link("/commits", [@luna.text("commits")]),
+      @luna.text(" | "),
+      @components.link("/branches", [@luna.text("branches")]),
+      @luna.text(" | "),
+      @components.link("/issues", [@luna.text("issues")]),
+      @luna.text(" | "),
+      @components.link("/pulls", [@luna.text("pulls")]),
+      @luna.text(" | "),
+      @components.link("/activity", [@luna.text("activity")]),
+      @luna.text(" | "),
+      @components.link("/search?q=", [@luna.text("search")]),
+      @luna.text(" | "),
+      @components.link("/actions", [@luna.text("actions")]),
+    ]
+  }
   let page = @luna.fragment([
     @components.banner([
       @luna.h("div", [("class", @luna.attr_static("site-banner"))], [
         @luna.h("strong", [("class", @luna.attr_static("site-title"))], [
-          @luna.text("bithub"),
+          @components.link("/", [@luna.text("bithub")]),
         ]),
         @luna.h(
           "nav",
@@ -1041,29 +1145,17 @@ fn render_layout(
             ("class", @luna.attr_static("site-nav")),
             ("aria-label", @luna.attr_static("primary navigation")),
           ],
-          [
-            @components.link("/", [@luna.text("home")]),
-            @luna.text(" | "),
-            @components.link("/readme", [@luna.text("README")]),
-            @luna.text(" | "),
-            @components.link("/filer", [@luna.text("filer")]),
-            @luna.text(" | "),
-            @components.link("/commits", [@luna.text("commits")]),
-            @luna.text(" | "),
-            @components.link("/branches", [@luna.text("branches")]),
-            @luna.text(" | "),
-            @components.link("/issues", [@luna.text("issues")]),
-            @luna.text(" | "),
-            @components.link("/pulls", [@luna.text("pulls")]),
-            @luna.text(" | "),
-            @components.link("/activity", [@luna.text("activity")]),
-            @luna.text(" | "),
-            @components.link("/search?q=", [@luna.text("search")]),
-            @luna.text(" | "),
-            @components.link("/actions", [@luna.text("actions")]),
-          ],
+          global_nav,
         ),
       ]),
+      @luna.h(
+        "nav",
+        [
+          ("class", @luna.attr_static("site-nav site-nav-repo")),
+          ("aria-label", @luna.attr_static("repository navigation")),
+        ],
+        repo_nav,
+      ),
     ]),
     @components.main_content([
       @components.region(aria_label="page content", content),
@@ -1074,10 +1166,11 @@ fn render_layout(
     #|:root{color-scheme:light dark;--bg:#f8fafc;--panel:#ffffff;--text:#0f172a;--link:#1d4ed8;--border:#d1d5db;--pre:#f3f4f6;}
     #|@media (prefers-color-scheme: dark){:root{--bg:#0b1220;--panel:#111a2e;--text:#dbe7ff;--link:#7cb3ff;--border:#2a3653;--pre:#0f172a;}}
     #|html{height:100%;}
-    #|body{margin:0;height:100%;box-sizing:border-box;background:var(--bg);color:var(--text);font-family:ui-sans-serif,system-ui,sans-serif;padding:68px 14px 34px;}
-    #|header{position:fixed;top:0;left:0;right:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--border);padding:12px 14px;}
+    #|body{margin:0;height:100%;box-sizing:border-box;background:var(--bg);color:var(--text);font-family:ui-sans-serif,system-ui,sans-serif;padding:90px 14px 34px;}
+    #|header{position:fixed;top:0;left:0;right:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--border);padding:8px 14px;}
     #|.site-banner{display:flex;gap:10px;align-items:center;flex-wrap:wrap;}
-    #|.site-title{font-size:18px;}
+    #|.site-title{font-size:18px;}.site-title a{text-decoration:none;}
+    #|.site-nav-repo{font-size:13px;padding:4px 0 0;border-top:1px solid var(--border);margin-top:4px;}
     #|main{max-width:980px;margin:0 auto;min-height:calc(100vh - 120px);background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px;}
     #|footer{position:fixed;left:0;right:0;bottom:0;background:var(--panel);border-top:1px solid var(--border);padding:4px 14px;font-size:12px;}
     #|a{color:var(--link);}
@@ -1442,7 +1535,7 @@ fn render_diff_patch(patch : String) -> @luna.Node[Unit, String] {
 }
 
 ///|
-fn render_tags_page(api : @core.ApiState) -> String {
+fn render_tags_page(api : @core.ApiState, workspace~ : String = "") -> String {
   let tags = api.list_tags()
   let rows : Array[@luna.Node[Unit, String]] = []
   for tag in tags {
@@ -1483,11 +1576,11 @@ fn render_tags_page(api : @core.ApiState) -> String {
   render_layout("Tags", [
     @luna.h("h1", [], [@luna.text("Tags")]),
     table,
-  ])
+  ], workspace~)
 }
 
 ///|
-fn render_stats_page(api : @core.ApiState) -> String {
+fn render_stats_page(api : @core.ApiState, workspace~ : String = "") -> String {
   let stats = api.repo_stats()
   let stat_items : Array[@luna.Node[Unit, String]] = [
     @luna.h("li", [], [
@@ -1537,18 +1630,18 @@ fn render_stats_page(api : @core.ApiState) -> String {
       ]),
     )
   }
-  render_layout("Stats", content)
+  render_layout("Stats", content, workspace~)
 }
 
 ///|
-fn render_blame_page(api : @core.ApiState, raw_path : String) -> PageHtml {
+fn render_blame_page(api : @core.ApiState, raw_path : String, workspace~ : String = "") -> PageHtml {
   if raw_path.length() == 0 {
     return {
       status: 400,
       html: render_layout("Blame", [
         @luna.h("h1", [], [@luna.text("Blame")]),
         @luna.h("p", [], [@luna.text("usage: /blame?path=file")]),
-      ]),
+      ], workspace~),
     }
   }
   match api.blame(raw_path) {
@@ -1650,7 +1743,7 @@ fn render_blame_page(api : @core.ApiState, raw_path : String) -> PageHtml {
             [("style", @luna.attr_static("overflow-x:auto;"))],
             [table],
           ),
-        ]),
+        ], workspace~),
       }
     }
     None => {
@@ -1658,13 +1751,13 @@ fn render_blame_page(api : @core.ApiState, raw_path : String) -> PageHtml {
       html: render_layout("Blame", [
         @luna.h("h1", [], [@luna.text("Blame: " + raw_path)]),
         @luna.h("p", [], [@luna.text("file not found")]),
-      ]),
+      ], workspace~),
     }
   }
 }
 
 ///|
-fn render_webhooks_page(api : @core.ApiState) -> String {
+fn render_webhooks_page(api : @core.ApiState, workspace~ : String = "") -> String {
   let webhooks = api.list_webhooks()
   let rows : Array[@luna.Node[Unit, String]] = []
   for wh in webhooks {
@@ -1702,11 +1795,11 @@ fn render_webhooks_page(api : @core.ApiState) -> String {
   render_layout("Webhooks", [
     @luna.h("h1", [], [@luna.text("Webhook Log")]),
     table,
-  ])
+  ], workspace~)
 }
 
 ///|
-fn render_pulls_page(api : @core.ApiState) -> String {
+fn render_pulls_page(api : @core.ApiState, workspace~ : String = "") -> String {
   let prs = api.list_pull_requests()
   let rows : Array[@luna.Node[Unit, String]] = []
   for pr in prs {
@@ -1755,13 +1848,14 @@ fn render_pulls_page(api : @core.ApiState) -> String {
   render_layout("Pull Requests", [
     @luna.h("h1", [], [@luna.text("Pull Requests")]),
     table,
-  ])
+  ], workspace~)
 }
 
 ///|
 fn render_pull_detail_page(
   api : @core.ApiState,
   id : String,
+  workspace~ : String = "",
 ) -> PageHtml {
   match api.get_pull_request(id) {
     Some(detail) => {
@@ -1853,20 +1947,20 @@ fn render_pull_detail_page(
           )
         }
       }
-      { status: 200, html: render_layout("PR #" + id, content) }
+      { status: 200, html: render_layout("PR #" + id, content, workspace~) }
     }
     None => {
       status: 404,
       html: render_layout("Pull Request", [
         @luna.h("h1", [], [@luna.text("PR #" + id)]),
         @luna.h("p", [], [@luna.text("pull request not found")]),
-      ]),
+      ], workspace~),
     }
   }
 }
 
 ///|
-fn render_search_page(api : @core.ApiState, query : String) -> String {
+fn render_search_page(api : @core.ApiState, query : String, workspace~ : String = "") -> String {
   let content : Array[@luna.Node[Unit, String]] = [
     @luna.h("h1", [], [@luna.text("Search")]),
     @luna.h(
@@ -1919,11 +2013,11 @@ fn render_search_page(api : @core.ApiState, query : String) -> String {
       content.push(@luna.h("ul", [], result_nodes))
     }
   }
-  render_layout("Search", content)
+  render_layout("Search", content, workspace~)
 }
 
 ///|
-fn render_issues_page(api : @core.ApiState) -> String {
+fn render_issues_page(api : @core.ApiState, workspace~ : String = "") -> String {
   let issues = api.list_issues()
   let rows : Array[@luna.Node[Unit, String]] = []
   for issue in issues {
@@ -1965,13 +2059,14 @@ fn render_issues_page(api : @core.ApiState) -> String {
   render_layout("Issues", [
     @luna.h("h1", [], [@luna.text("Issues")]),
     table,
-  ])
+  ], workspace~)
 }
 
 ///|
 fn render_issue_detail_page(
   api : @core.ApiState,
   id : String,
+  workspace~ : String = "",
 ) -> PageHtml {
   match api.get_issue(id) {
     Some(detail) => {
@@ -2034,20 +2129,20 @@ fn render_issue_detail_page(
           )
         }
       }
-      { status: 200, html: render_layout("#" + id + " " + detail.issue.title, content) }
+      { status: 200, html: render_layout("#" + id + " " + detail.issue.title, content, workspace~) }
     }
     None => {
       status: 404,
       html: render_layout("Issue", [
         @luna.h("h1", [], [@luna.text("Issue #" + id)]),
         @luna.h("p", [], [@luna.text("issue not found")]),
-      ]),
+      ], workspace~),
     }
   }
 }
 
 ///|
-fn render_activity_page(api : @core.ApiState) -> String {
+fn render_activity_page(api : @core.ApiState, workspace~ : String = "") -> String {
   let events = api.activity_feed()
   let items : Array[@luna.Node[Unit, String]] = []
   for event in events {
@@ -2091,13 +2186,14 @@ fn render_activity_page(api : @core.ApiState) -> String {
   render_layout("Activity", [
     @luna.h("h1", [], [@luna.text("Activity")]),
     table,
-  ])
+  ], workspace~)
 }
 
 ///|
 fn render_compare_page(
   api : @core.ApiState,
   spec : String,
+  workspace~ : String = "",
 ) -> PageHtml {
   // spec format: "base...head"
   let parts = match spec.find("...") {
@@ -2116,7 +2212,7 @@ fn render_compare_page(
         @luna.h("p", [], [
           @luna.text("usage: /compare/base...head"),
         ]),
-      ]),
+      ], workspace~),
     }
     Some((base, head)) =>
       match api.compare_commits(base, head) {
@@ -2185,7 +2281,7 @@ fn render_compare_page(
           }
           {
             status: 200,
-            html: render_layout("Compare: " + base + "..." + head, content),
+            html: render_layout("Compare: " + base + "..." + head, content, workspace~),
           }
         }
         None => {
@@ -2195,14 +2291,14 @@ fn render_compare_page(
               @luna.text("Compare: " + base + "..." + head),
             ]),
             @luna.h("p", [], [@luna.text("no commits found between these refs")]),
-          ]),
+          ], workspace~),
         }
       }
   }
 }
 
 ///|
-fn render_commits_page(api : @core.ApiState) -> String {
+fn render_commits_page(api : @core.ApiState, workspace~ : String = "") -> String {
   let commits = api.list_commits()
   let rows : Array[@luna.Node[Unit, String]] = []
   for commit in commits {
@@ -2249,13 +2345,14 @@ fn render_commits_page(api : @core.ApiState) -> String {
   render_layout("Commits", [
     @luna.h("h1", [], [@luna.text("Commits")]),
     table,
-  ])
+  ], workspace~)
 }
 
 ///|
 fn render_commit_detail_page(
   api : @core.ApiState,
   sha : String,
+  workspace~ : String = "",
 ) -> PageHtml {
   if sha.length() == 0 {
     return {
@@ -2263,7 +2360,7 @@ fn render_commit_detail_page(
       html: render_layout("Commit", [
         @luna.h("h1", [], [@luna.text("Commit")]),
         @luna.h("p", [], [@luna.text("usage: /commit/:sha")]),
-      ]),
+      ], workspace~),
     }
   }
   match api.get_commit(sha) {
@@ -2315,20 +2412,20 @@ fn render_commit_detail_page(
         }
         content.push(@luna.h("ul", [], diff_nodes))
       }
-      { status: 200, html: render_layout("Commit: " + sha, content) }
+      { status: 200, html: render_layout("Commit: " + sha, content, workspace~) }
     }
     None => {
       status: 404,
       html: render_layout("Commit", [
         @luna.h("h1", [], [@luna.text("Commit: " + sha)]),
         @luna.h("p", [], [@luna.text("commit not found")]),
-      ]),
+      ], workspace~),
     }
   }
 }
 
 ///|
-fn render_branches_page(api : @core.ApiState) -> String {
+fn render_branches_page(api : @core.ApiState, workspace~ : String = "") -> String {
   let branches = api.list_branches()
   let rows : Array[@luna.Node[Unit, String]] = []
   for branch in branches {
@@ -2372,11 +2469,11 @@ fn render_branches_page(api : @core.ApiState) -> String {
   render_layout("Branches", [
     @luna.h("h1", [], [@luna.text("Branches")]),
     table,
-  ])
+  ], workspace~)
 }
 
 ///|
-fn render_ci_page(api : @core.ApiState) -> String {
+fn render_ci_page(api : @core.ApiState, workspace~ : String = "") -> String {
   let runs = api.list_ci_runs()
   let rows : Array[@luna.Node[Unit, String]] = []
   for run in runs {
@@ -2419,13 +2516,14 @@ fn render_ci_page(api : @core.ApiState) -> String {
   render_layout("CI Runs", [
     @luna.h("h1", [], [@luna.text("CI Runs")]),
     table,
-  ])
+  ], workspace~)
 }
 
 ///|
 fn render_ci_run_detail_page(
   api : @core.ApiState,
   run_id : String,
+  workspace~ : String = "",
 ) -> PageHtml {
   if run_id.length() == 0 {
     return {
@@ -2433,7 +2531,7 @@ fn render_ci_run_detail_page(
       html: render_layout("CI Run", [
         @luna.h("h1", [], [@luna.text("CI Run")]),
         @luna.h("p", [], [@luna.text("usage: /actions/runs/:id")]),
-      ]),
+      ], workspace~),
     }
   }
   match api.get_ci_run_detail(run_id) {
@@ -2481,14 +2579,14 @@ fn render_ci_run_detail_page(
         )
         content.push(@luna.h("ol", [], step_nodes))
       }
-      { status: 200, html: render_layout("CI Run: " + run_id, content) }
+      { status: 200, html: render_layout("CI Run: " + run_id, content, workspace~) }
     }
     None => {
       status: 404,
       html: render_layout("CI Run", [
         @luna.h("h1", [], [@luna.text("CI Run: " + run_id)]),
         @luna.h("p", [], [@luna.text("run not found")]),
-      ]),
+      ], workspace~),
     }
   }
 }

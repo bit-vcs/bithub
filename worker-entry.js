@@ -59,29 +59,37 @@ async function preloadForRoute(env, pathname) {
 
   const prefixes = []; // tokens already seeded above
 
+  // Strip /workspace/{id} prefix for route matching
+  let routePath = pathname;
+  if (pathname.startsWith("/workspace/")) {
+    const rest = pathname.slice("/workspace/".length);
+    const slash = rest.indexOf("/");
+    routePath = slash >= 0 ? rest.slice(slash) : "/filer";
+  }
+
   // Route-based prefixes
-  if (pathname.startsWith("/issues") || pathname === "/activity") {
+  if (routePath.startsWith("/issues") || routePath === "/activity") {
     prefixes.push("issues/");
   }
-  if (pathname.startsWith("/pulls") || pathname === "/activity") {
+  if (routePath.startsWith("/pulls") || routePath === "/activity") {
     prefixes.push("prs/");
   }
-  if (pathname.startsWith("/actions") || pathname.startsWith("/api/webhook")) {
+  if (routePath.startsWith("/actions") || pathname.startsWith("/api/webhook")) {
     prefixes.push("ci/", ".github/workflows/");
   }
-  if (pathname.startsWith("/commits") || pathname.startsWith("/commit/")) {
+  if (routePath.startsWith("/commits") || routePath.startsWith("/commit/")) {
     prefixes.push("git/commits/");
   }
-  if (pathname === "/branches") {
+  if (routePath === "/branches") {
     prefixes.push("git/branches/");
   }
-  if (pathname === "/tags") {
+  if (routePath === "/tags") {
     prefixes.push("git/tags/");
   }
-  if (pathname.startsWith("/webhooks")) {
+  if (routePath.startsWith("/webhooks")) {
     prefixes.push("webhooks/");
   }
-  if (pathname === "/stats" || pathname === "/activity") {
+  if (routePath === "/stats" || routePath === "/activity") {
     prefixes.push(
       "git/commits/",
       "git/branches/",
@@ -90,14 +98,18 @@ async function preloadForRoute(env, pathname) {
     );
   }
   if (
-    pathname.startsWith("/file") ||
-    pathname.startsWith("/filer") ||
-    pathname.startsWith("/search") ||
-    pathname.startsWith("/blame") ||
-    pathname.startsWith("/readme") ||
-    pathname === "/"
+    routePath.startsWith("/filer") ||
+    routePath.startsWith("/search") ||
+    routePath.startsWith("/blame")
   ) {
-    // Need file content — load common files
+    // Filer needs all repo files — load everything
+    prefixes.push("");
+  } else if (
+    routePath.startsWith("/file") ||
+    routePath.startsWith("/readme") ||
+    routePath === "/"
+  ) {
+    // Single file view — load common files
     prefixes.push("README.md");
   }
   if (pathname.startsWith("/api/files") || pathname.startsWith("/api/issues") || pathname.startsWith("/api/pulls") || pathname.startsWith("/api/trigger")) {
@@ -112,8 +124,8 @@ async function preloadForRoute(env, pathname) {
     loaded.add(prefix);
 
     try {
-      // Single key (e.g. "README.md")
-      if (!prefix.endsWith("/")) {
+      // Single key (e.g. "README.md") — but "" means list all
+      if (prefix !== "" && !prefix.endsWith("/")) {
         const obj = await bucket.get(prefix);
         if (obj) {
           cache["BITHUB_STORE/" + prefix] = await obj.text();
@@ -121,13 +133,14 @@ async function preloadForRoute(env, pathname) {
         continue;
       }
 
-      // Prefix listing
+      // Prefix listing (empty prefix = list all)
+      const listOpts = prefix ? { prefix, limit: 500 } : { limit: 500 };
       let cursor = undefined;
       let count = 0;
       do {
-        const listed = await bucket.list({ prefix, cursor, limit: 200 });
+        const listed = await bucket.list({ ...listOpts, cursor });
         for (const obj of listed.objects) {
-          if (count >= 200) break;
+          if (count >= 500) break;
           const body = await bucket.get(obj.key);
           if (body) {
             cache["BITHUB_STORE/" + obj.key] = await body.text();
@@ -135,7 +148,7 @@ async function preloadForRoute(env, pathname) {
           }
         }
         cursor = listed.truncated ? listed.cursor : undefined;
-      } while (cursor && count < 200);
+      } while (cursor && count < 500);
     } catch {}
   }
 }
@@ -234,29 +247,27 @@ async function handleApiInit(request, env) {
       file_count: fileCount,
     }));
 
-    // 5. Get recent commits
-    const commitsRes = await fetch(`${ghApi}/commits?per_page=20`, { headers });
+    // 5. Get HEAD commit only (--depth 1)
+    const commitsRes = await fetch(`${ghApi}/commits?sha=${defaultBranch}&per_page=1`, { headers });
     if (commitsRes.ok) {
       const commits = await commitsRes.json();
-      for (let i = 0; i < commits.length; i++) {
-        const c = commits[i];
+      if (commits.length > 0) {
+        const c = commits[0];
         const meta = [
           `message=${c.commit.message.split("\n")[0]}`,
           `author=${c.commit.author.name}`,
           `timestamp=${Math.floor(new Date(c.commit.author.date).getTime() / 1000)}`,
-          `parent=${commits[i + 1]?.sha || ""}`,
+          `parent=`,
         ].join("\n");
         await bucket.put(`git/commits/${c.sha}`, meta);
       }
     }
 
-    // 6. Get branches
-    const branchesRes = await fetch(`${ghApi}/branches?per_page=30`, { headers });
-    if (branchesRes.ok) {
-      const branches = await branchesRes.json();
-      for (const b of branches) {
-        await bucket.put(`git/branches/${b.name}`, b.commit.sha);
-      }
+    // 6. Store only default branch (--depth 1, main branch only)
+    const branchRes = await fetch(`${ghApi}/branches/${defaultBranch}`, { headers });
+    if (branchRes.ok) {
+      const branch = await branchRes.json();
+      await bucket.put(`git/branches/${defaultBranch}`, branch.commit.sha);
       await bucket.put("git/HEAD", `ref: refs/heads/${defaultBranch}`);
     }
 
