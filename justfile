@@ -108,6 +108,10 @@ vrt-spec-verify:
 vrt-expect:
   tsx vrt/src/vrt-cli.ts expect
 
+# Run VRT demo (kitty graphics)
+vrt-demo:
+  tsx vrt/src/demo.ts
+
 # Run VRT unit tests
 vrt-test:
   cd vrt && node --test --experimental-strip-types src/**/*.test.ts
