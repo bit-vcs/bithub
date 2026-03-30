@@ -6,7 +6,7 @@ import type {
   A11ySnapshot,
 } from "./types.ts";
 
-const LANDMARK_ROLES = new Set([
+export const LANDMARK_ROLES = new Set([
   "banner",
   "complementary",
   "contentinfo",
@@ -17,7 +17,7 @@ const LANDMARK_ROLES = new Set([
   "search",
 ]);
 
-const INTERACTIVE_ROLES = new Set([
+export const INTERACTIVE_ROLES = new Set([
   "button",
   "checkbox",
   "combobox",

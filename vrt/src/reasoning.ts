@@ -5,7 +5,7 @@ import type {
   ExpectedA11yChange,
   PageExpectation,
 } from "./types.ts";
-import { matchA11yExpectation } from "./expectation.ts";
+import { STOP_WORDS, SYNONYMS } from "./expectation.ts";
 
 /**
  * 期待→変更→実現 の reasoning chain
@@ -63,7 +63,6 @@ export function reasonAboutChanges(
   }));
 
   const expectedChanges = pageExp.expectedA11yChanges ?? [];
-  const matchResult = matchA11yExpectation(pageExp, a11yDiff);
 
   // 期待と実際の対応付け (consumed tracking で重複マッチを防止)
   const mappings: ExpectationMapping[] = [];
@@ -92,8 +91,7 @@ export function reasonAboutChanges(
   }
 
   // 期待にない変更 (side effects)
-  const consumedSet = consumed;
-  const sideEffects = actualChanges.filter((_, i) => !consumedSet.has(i));
+  const sideEffects = actualChanges.filter((_, i) => !consumed.has(i));
 
   // Verdict
   const allRealized = mappings.length > 0 && mappings.every((m) => m.realized);
@@ -153,22 +151,12 @@ function findBestMatchIdx(
 
   // description fuzzy マッチ
   // ストップワードを除去し、同義語を展開してから比較
-  const stopWords = new Set(["gets", "added", "removed", "changed", "from", "with", "that", "this", "should", "have", "accessible", "the"]);
-  const synonyms: Record<string, string[]> = {
-    input: ["textbox", "searchbox", "combobox"],
-    textbox: ["input"],
-    label: ["name", "accessible"],
-    button: ["btn"],
-    nav: ["navigation"],
-    navigation: ["nav"],
-    search: ["searchbox"],
-  };
   const rawKeywords = exp.description
     .toLowerCase()
     .split(/\s+/)
-    .filter((w) => w.length > 2 && !stopWords.has(w));
+    .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
   // 同義語を展開
-  const keywords = rawKeywords.flatMap((k) => [k, ...(synonyms[k] ?? [])]);
+  const keywords = rawKeywords.flatMap((k) => [k, ...(SYNONYMS[k] ?? [])]);
 
   let bestIdx = -1;
   let bestScore = 0;

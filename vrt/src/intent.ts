@@ -52,8 +52,6 @@ export function parseDiff(diffText: string): FileChange[] {
     let deletions = 0;
     const hunks: DiffHunk[] = [];
 
-    const hunkRe = /^@@\s+-(\d+)(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@(.*)/gm;
-    let match;
     const lines = section.split("\n");
 
     let currentHunk: DiffHunk | null = null;

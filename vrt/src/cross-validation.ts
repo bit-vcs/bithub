@@ -148,16 +148,9 @@ export function crossValidate(
     };
   }
 
-  // fallback
-  return {
-    testId,
-    visualDiff,
-    a11yDiff,
-    intentMatch: false,
-    consistency: "mismatch",
-    recommendation: "escalate",
-    reasoning: "Unable to determine consistency",
-  };
+  // All boolean combinations of hasVisual/hasA11y are covered above.
+  // This is unreachable but satisfies the return type.
+  throw new Error("Unreachable: all visual/a11y combinations are handled");
 }
 
 function matchesComponentIntent(

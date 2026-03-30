@@ -149,6 +149,7 @@ async function verify() {
       summary: "unknown change",
       changeType: "unknown" as const,
       expectedVisualChanges: [],
+      expectedA11yChanges: [],
       affectedComponents: [],
     };
   }

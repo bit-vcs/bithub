@@ -5,13 +5,11 @@ import type {
   A11yDiff,
   A11yChange,
   ExpectedA11yChange,
-  VrtDiff,
   VisualSemanticDiff,
   CrossValidationResult,
   ChangeIntent,
   LoopScore,
   ScoreDetail,
-  QualityCheckResult,
   UnifiedAgentContext,
 } from "./types.ts";
 
@@ -89,20 +87,18 @@ export function matchA11yExpectation(
     }
   }
 
-  const unmatchedExpected = expected
-    .filter((_, i) => !matchedChanges.some((m) => m.startsWith(expected[i].description)))
-    .map((e) => e.description);
-
-  // unmatchedExpected をもう少し正確に: matchedChanges の先頭部分でフィルタしてるが、
-  // 正確には matched indices を使う
-  const matchedExpIdx = new Set<number>();
-  for (const exp of expected) {
-    const idx = actual.findIndex((a, i) => !matchedActualIdx.has(i) || matchesSingleA11yChange(exp, a));
-    // Re-check: just track which expected were matched
+  // Track which expected items were matched by index
+  const matchedExpIndices = new Set<number>();
+  for (let i = 0; i < expected.length; i++) {
+    const idx = actual.findIndex((a, ai) => !matchedActualIdx.has(ai) && matchesSingleA11yChange(expected[i], a));
+    if (matchedChanges.some((m) => m.startsWith(expected[i].description))) {
+      matchedExpIndices.add(i);
+    }
   }
-  // Simple approach: count
-  const unmatchedExp = expected.length - matchedChanges.length;
-  const unmatchedExpDescs = expected.slice(matchedChanges.length).map((e) => e.description);
+
+  const unmatchedExpDescs = expected
+    .filter((_, i) => !matchedExpIndices.has(i))
+    .map((e) => e.description);
 
   const unexpectedChanges = actual
     .filter((_, i) => !matchedActualIdx.has(i))
@@ -180,13 +176,35 @@ function matchesSingleA11yChange(exp: ExpectedA11yChange, actual: A11yChange): b
  * description のキーワードで fuzzy マッチ
  * 将来的にはここを LLM 呼び出しに置き換え可能
  */
+export const STOP_WORDS = new Set([
+  "gets", "added", "removed", "changed", "from", "with",
+  "that", "this", "should", "have", "accessible", "the",
+]);
+
+export const SYNONYMS: Record<string, string[]> = {
+  input: ["textbox", "searchbox", "combobox"],
+  textbox: ["input"],
+  label: ["name", "accessible"],
+  button: ["btn"],
+  nav: ["navigation"],
+  navigation: ["nav"],
+  search: ["searchbox"],
+};
+
 function fuzzyDescriptionMatch(description: string, actual: A11yChange): boolean {
-  const keywords = description.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
+  const rawKeywords = description
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((w) => w.length > 2 && !STOP_WORDS.has(w));
+  // Expand synonyms for better matching
+  const keywords = rawKeywords.flatMap((k) => [k, ...(SYNONYMS[k] ?? [])]);
   if (keywords.length === 0) return false;
 
   const target = `${actual.type} ${actual.description} ${actual.path}`.toLowerCase();
-  const matchCount = keywords.filter((k) => target.includes(k)).length;
-  return matchCount / keywords.length >= 0.4; // 40% のキーワードが一致すればマッチ
+  const matched = keywords.filter((k) => target.includes(k)).length;
+  // Require at least 2 keyword matches AND 40% ratio to avoid false positives
+  // from single-word matches in paths (e.g. "form" matching form[Contact])
+  return matched >= 2 && matched / keywords.length >= 0.4;
 }
 
 /**

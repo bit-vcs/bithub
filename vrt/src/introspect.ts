@@ -8,17 +8,7 @@ import type {
   UiSpec,
   PageSpec,
 } from "./types.ts";
-
-const LANDMARK_ROLES = new Set([
-  "banner", "complementary", "contentinfo", "form",
-  "main", "navigation", "region", "search",
-]);
-
-const INTERACTIVE_ROLES = new Set([
-  "button", "checkbox", "combobox", "link", "listbox",
-  "menu", "menuitem", "option", "radio", "searchbox",
-  "slider", "spinbutton", "switch", "tab", "textbox", "treeitem",
-]);
+import { LANDMARK_ROLES, INTERACTIVE_ROLES } from "./a11y-semantic.ts";
 
 /**
  * a11y スナップショットから UI の仕様を自動生成する
