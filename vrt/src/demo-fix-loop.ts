@@ -18,6 +18,8 @@ import { introspectToSpec, verifySpec, type SpecVerifyResult } from "./introspec
 import { compareScreenshots, encodePng } from "./heatmap.ts";
 import { classifyVisualDiff } from "./visual-semantic.ts";
 import { runGoal, formatGoalReport, type Goal } from "./goal-runner.ts";
+import { createLLMProvider } from "./llm-client.ts";
+import type { LLMProvider } from "./intent.ts";
 import type { A11yNode, PageExpectation, ChangeIntent, VrtSnapshot } from "./types.ts";
 
 const FIXTURES = join(import.meta.dirname!, "..", "fixtures", "react-sample");
@@ -155,6 +157,39 @@ function printReasoning(chain: ReasoningChain) {
   }
 }
 
+function buildDiagnosisPrompt(
+  a11yDiff: ReturnType<typeof diffTrees>,
+  issues: ReturnType<typeof checkA11yTree>,
+  specFailed: Array<{ invariant: { description: string }; reasoning: string }>,
+  chain: ReasoningChain,
+): string {
+  return `You are a UI accessibility expert. A developer ran a refactor and accidentally broke the form labels.
+
+## Detected Issues
+
+### A11y Tree Diff (before → after)
+${a11yDiff.changes.map((c) => `- [${c.type}] ${c.description} (severity: ${c.severity})`).join("\n")}
+
+### A11y Quality Issues
+${issues.map((i) => `- [${i.severity}] ${i.rule}: ${i.message} (at ${i.path})`).join("\n")}
+
+### Spec Violations
+${specFailed.map((f) => `- ${f.invariant.description}: ${f.reasoning}`).join("\n")}
+
+### Reasoning Verdict: ${chain.verdict}
+${chain.actualChanges.map((a) => `- [${a.type}] ${a.description}`).join("\n")}
+
+## Task
+
+Based on the above, provide:
+1. **Root Cause**: What went wrong?
+2. **Impact**: What user-facing problems does this cause?
+3. **Fix Plan**: Step-by-step instructions to fix each issue
+4. **Verification**: How to confirm the fix worked
+
+Be concise. Focus on actionable fixes.`;
+}
+
 function generateFixPlan(chain: ReasoningChain, issues: ReturnType<typeof checkA11yTree>): string[] {
   const plan: string[] = [];
 
@@ -283,17 +318,37 @@ async function main() {
   await sleep(500);
 
   // ============================================================
-  // Phase 3: Generate fix plan
+  // Phase 3: Generate fix plan (LLM or heuristic)
   // ============================================================
-  banner("Phase 3: Fix Plan (from reasoning)");
+  banner("Phase 3: AI Diagnosis & Fix Plan");
 
-  const fixPlan = generateFixPlan(chain, brokenIssues);
-  console.log(`  ${BOLD}${fixPlan.length} action item(s):${RESET}\n`);
-  for (let i = 0; i < fixPlan.length; i++) {
-    console.log(`  ${YELLOW}${i + 1}.${RESET} ${fixPlan[i]}`);
+  const llm = createLLMProvider();
+
+  if (llm) {
+    console.log(`  ${DIM}Calling LLM for diagnosis...${RESET}\n`);
+
+    const diagnosisPrompt = buildDiagnosisPrompt(a11yDiff, brokenIssues, specFailed, chain);
+    const llmStart = Date.now();
+    const diagnosis = await llm.complete(diagnosisPrompt);
+    const llmMs = Date.now() - llmStart;
+
+    console.log(`  ${BOLD}AI Diagnosis${RESET} ${DIM}(${llmMs}ms)${RESET}:\n`);
+    // Print with indentation
+    for (const line of diagnosis.split("\n")) {
+      console.log(`  ${line}`);
+    }
+    console.log();
+  } else {
+    console.log(`  ${DIM}(ANTHROPIC_API_KEY not set — using heuristic fallback)${RESET}\n`);
+
+    const fixPlan = generateFixPlan(chain, brokenIssues);
+    console.log(`  ${BOLD}${fixPlan.length} action item(s):${RESET}\n`);
+    for (let i = 0; i < fixPlan.length; i++) {
+      console.log(`  ${YELLOW}${i + 1}.${RESET} ${fixPlan[i]}`);
+    }
   }
 
-  console.log(`\n  ${DIM}An agent would now apply these fixes...${RESET}`);
+  console.log(`  ${DIM}An agent would now apply these fixes...${RESET}`);
   await sleep(500);
 
   // ============================================================
@@ -356,6 +411,35 @@ async function main() {
   const fixedSpecFailed = fixedSpecResult.results[0].checked.filter((c) => !c.passed);
   console.log(`\n  ${BOLD}Spec Verification:${RESET} ${fixedSpecFailed.length === 0 ? `${BG_GREEN}${BOLD} ALL PASS ${RESET}` : `${RED}${fixedSpecFailed.length} failed${RESET}`}`);
 
+  // LLM による修正評価
+  if (llm) {
+    console.log(`\n  ${DIM}Calling LLM for fix evaluation...${RESET}\n`);
+
+    const evalPrompt = `You are verifying a UI fix. The original issue was form labels disappearing during a refactor.
+
+## Fix Applied
+The following a11y changes were made (baseline → fixed):
+${fixedDiff.changes.map((c) => `- [${c.type}] ${c.description}`).join("\n")}
+
+## Verification Results
+- Spec violations: ${fixedSpecFailed.length}
+- A11y quality issues: ${checkA11yTree(fixed).length}
+- Reasoning verdict: ${fixChain.verdict}
+- All expected changes realized: ${fixChain.mappings.every((m) => m.realized)}
+
+## Task
+In 2-3 sentences: Is this fix adequate? Are there remaining concerns? Rate the fix quality (1-10).`;
+
+    const evalStart = Date.now();
+    const evaluation = await llm.complete(evalPrompt);
+    const evalMs = Date.now() - evalStart;
+
+    console.log(`  ${BOLD}AI Fix Evaluation${RESET} ${DIM}(${evalMs}ms)${RESET}:\n`);
+    for (const line of evaluation.split("\n")) {
+      console.log(`  ${line}`);
+    }
+  }
+
   await sleep(300);
 
   // ============================================================
@@ -367,8 +451,8 @@ async function main() {
   console.log();
   console.log(`  ${DIM}Phase 1:${RESET} Baseline established (spec: ${spec.pages[0].invariants.length} invariants)`);
   console.log(`  ${DIM}Phase 2:${RESET} ${RED}Regression detected${RESET} — ${a11yDiff.changes.length} a11y changes, ${brokenIssues.length} quality issues, ${specFailed.length} spec violations`);
-  console.log(`  ${DIM}Phase 3:${RESET} ${YELLOW}Fix plan generated${RESET} — ${fixPlan.length} action items from reasoning`);
-  console.log(`  ${DIM}Phase 4:${RESET} ${GREEN}Fix verified${RESET} — ${fixChain.verdict}, ${fixedSpecFailed.length} spec violations, 0 a11y issues`);
+  console.log(`  ${DIM}Phase 3:${RESET} ${YELLOW}Fix plan generated${RESET} — ${llm ? "AI diagnosis" : "heuristic"}`);
+  console.log(`  ${DIM}Phase 4:${RESET} ${GREEN}Fix verified${RESET} — ${fixChain.verdict}, ${fixedSpecFailed.length} spec violations, 0 a11y issues${llm ? " + AI evaluation" : ""}`);
   console.log();
   console.log(`  ${BOLD}${GREEN}✓ Regression detected → reasoned → fixed → verified${RESET}`);
   console.log();
