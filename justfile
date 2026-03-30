@@ -112,6 +112,10 @@ vrt-expect:
 vrt-demo:
   npx tsx vrt/src/demo.ts
 
+# Run fix loop demo (detect → reason → fix → verify)
+vrt-demo-fix:
+  npx tsx vrt/src/demo-fix-loop.ts
+
 # Run VRT unit tests
 vrt-test:
   cd vrt && node --test --experimental-strip-types src/**/*.test.ts
