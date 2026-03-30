@@ -592,6 +592,101 @@ async function specVerifyCmd() {
   }
 }
 
+async function expectCmd() {
+  console.log("=== Generate expectation.json from current state ===\n");
+
+  if (!existsSync(BASELINES_DIR)) {
+    console.error("No baselines found. Run `vrt init` first.");
+    process.exit(1);
+  }
+  if (!existsSync(SNAPSHOTS_DIR)) {
+    console.error("No snapshots found. Run `vrt capture` first.");
+    process.exit(1);
+  }
+
+  // 1. git diff から intent を推測
+  let intentSummary = "unknown change";
+  let changeType: string = "unknown";
+  try {
+    const semantics = await extractDiffSemantics(PROJECT_ROOT);
+    intentSummary = semantics.intent.summary;
+    changeType = semantics.intent.changeType;
+    console.log(`Intent: ${intentSummary} (${changeType})`);
+  } catch {
+    console.log("(no git diff available)");
+  }
+
+  // 2. baseline vs snapshot の a11y diff を取る
+  const baseA11yFiles = await listFiles(BASELINES_DIR, ".a11y.json");
+  const pages: Array<{
+    testId: string;
+    hasA11yDiff: boolean;
+    hasRegression: boolean;
+    changes: Array<{ type: string; description: string }>;
+  }> = [];
+
+  for (const file of baseA11yFiles) {
+    const testId = file.replace(/\.a11y\.json$/, "");
+    const snapFile = join(SNAPSHOTS_DIR, file);
+    if (!existsSync(snapFile)) continue;
+
+    try {
+      const baseRaw = JSON.parse(await readFile(join(BASELINES_DIR, file), "utf-8"));
+      const snapRaw = JSON.parse(await readFile(snapFile, "utf-8"));
+      if (!baseRaw || !snapRaw) continue;
+
+      const baseSnap = parsePlaywrightA11ySnapshot(testId, testId, baseRaw);
+      const snapSnap = parsePlaywrightA11ySnapshot(testId, testId, snapRaw);
+      const diff = diffA11yTrees(baseSnap, snapSnap);
+
+      pages.push({
+        testId,
+        hasA11yDiff: diff.changes.length > 0,
+        hasRegression: diff.hasRegression,
+        changes: diff.changes.map((c) => ({ type: c.type, description: c.description })),
+      });
+    } catch {
+      pages.push({ testId, hasA11yDiff: false, hasRegression: false, changes: [] });
+    }
+  }
+
+  // 3. expectation.json を構築
+  const expectation: Record<string, unknown> = {
+    description: intentSummary,
+    intent: {
+      summary: intentSummary,
+      changeType,
+    },
+    pages: pages.map((p) => {
+      if (!p.hasA11yDiff) {
+        return { testId: p.testId, expect: "No changes" };
+      }
+
+      const expect = p.hasRegression
+        ? `A11y regression expected: ${p.changes.map((c) => c.description).join("; ")}`
+        : `A11y changes: ${p.changes.map((c) => c.description).join("; ")}`;
+
+      const a11y = p.hasRegression ? "regression-expected" : "changed";
+
+      return {
+        testId: p.testId,
+        expect,
+        a11y,
+        expectedA11yChanges: p.changes.map((c) => ({ description: c.description })),
+      };
+    }),
+  };
+
+  await writeFile(EXPECTATION_PATH, JSON.stringify(expectation, null, 2));
+
+  console.log(`\nGenerated ${EXPECTATION_PATH}:`);
+  for (const p of pages) {
+    const icon = !p.hasA11yDiff ? "  " : p.hasRegression ? "!!" : "~~";
+    console.log(`  [${icon}] ${p.testId}: ${p.changes.length} change(s)`);
+  }
+  console.log(`\nReview and edit as needed, then run: vrt verify`);
+}
+
 // ---- Helpers ----
 
 async function listFiles(dir: string, suffix: string): Promise<string[]> {
@@ -617,6 +712,7 @@ const commands: Record<string, () => Promise<void>> = {
   affected: affectedCmd,
   introspect: introspectCmd,
   "spec-verify": specVerifyCmd,
+  expect: expectCmd,
 };
 
 const handler = commands[command];
@@ -640,6 +736,7 @@ Commands:
   affected   Show components affected by current changes
   introspect Generate spec.json from current a11y snapshots
   spec-verify Verify spec.json invariants against current state
+  expect     Auto-generate expectation.json from baseline vs snapshot diff
 
 Workflow for coding agents:
   1. vrt init            — One-time baseline setup

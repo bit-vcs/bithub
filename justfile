@@ -104,6 +104,10 @@ vrt-introspect:
 vrt-spec-verify:
   tsx vrt/src/vrt-cli.ts spec-verify
 
+# Auto-generate expectation.json from diff
+vrt-expect:
+  tsx vrt/src/vrt-cli.ts expect
+
 # Run VRT unit tests
 vrt-test:
   cd vrt && node --test --experimental-strip-types src/**/*.test.ts
