@@ -134,10 +134,8 @@ const scenarios: ScenarioDef[] = [
     correctExpectation: { testId: "home", expect: "No a11y regression expected in refactor", a11y: "no-change" },
     wrongExpectation: { testId: "home", expect: "Search added", expectedA11yChanges: [{ description: "Search added" }] },
     expectVerdict: "not-realized",
-    // NOTE: form は spec の suggestedInvariants に含まれない (banner/main/nav のみ)
-    // label-present は form 内要素がなくなるので pass する → specShouldFail = false
-    // これはハーネスの限界: form landmark の不変条件を手動で spec に追加する必要がある
-    specShouldFail: false,
+    // form ランドマーク + element-count invariant で検出可能
+    specShouldFail: true,
   },
   {
     name: "heading restructured",
@@ -162,10 +160,8 @@ const scenarios: ScenarioDef[] = [
     correctExpectation: { testId: "home", expect: "No a11y changes expected in refactor", a11y: "no-change" },
     wrongExpectation: { testId: "home", expect: "No changes at all", a11y: "no-change" },
     expectVerdict: "not-realized",
-    // NOTE: role change (link→button) は a11y-semantic で role-changed として検出されるが
-    // spec invariant は landmark (banner/main/nav) の存在チェックのみ。nav は存在するので pass。
-    // role-changed は spec invariant ではカバーされない → これは設計上の limitation。
-    specShouldFail: false,
+    // element-count invariant で link→button の数の変化を検出可能
+    specShouldFail: true,
   },
 ];
 
@@ -289,8 +285,16 @@ function buildIntrospection(tree: A11yNode) {
     interactiveElements: interactive,
     stats: { totalNodes: 0, landmarkCount: landmarks.length, interactiveCount: interactive.length, unlabeledCount: interactive.filter((e) => !e.hasLabel).length, headingLevels: [] },
     suggestedInvariants: [
-      ...landmarks.filter((l) => ["banner", "main", "navigation"].includes(l.role))
-        .map((l) => ({ description: `${l.role} landmark is present`, check: "landmark-exists" as const, cost: "low" as const })),
+      ...landmarks.map((l) => ({ description: `${l.role} landmark "${l.name || "(unnamed)"}" is present`, check: "landmark-exists" as const, cost: "low" as const })),
+      ...(() => {
+        const roleCounts = new Map<string, number>();
+        for (const el of interactive) roleCounts.set(el.role, (roleCounts.get(el.role) ?? 0) + 1);
+        return [...roleCounts].map(([role, count]) => ({
+          description: `${count} ${role} element(s) expected`,
+          check: "element-count" as const,
+          cost: "low" as const,
+        }));
+      })(),
       { description: "All interactive elements have labels", check: "label-present" as const, cost: "low" as const },
       { description: "No whiteout", check: "no-whiteout" as const, cost: "low" as const },
     ],

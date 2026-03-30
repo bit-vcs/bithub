@@ -121,15 +121,26 @@ function generateInvariants(
 ): SpecInvariant[] {
   const invariants: SpecInvariant[] = [];
 
-  // ランドマーク存在
+  // ランドマーク存在 (全ランドマークを invariant に含める)
   for (const lm of landmarks) {
-    if (lm.role === "banner" || lm.role === "main" || lm.role === "navigation") {
-      invariants.push({
-        description: `${lm.role} landmark "${lm.name || "(unnamed)"}" is present`,
-        check: "landmark-exists",
-        cost: "low",
-      });
-    }
+    invariants.push({
+      description: `${lm.role} landmark "${lm.name || "(unnamed)"}" is present`,
+      check: "landmark-exists",
+      cost: "low",
+    });
+  }
+
+  // インタラクティブ要素の role スナップショット (role-changed 検出用)
+  const roleCounts = new Map<string, number>();
+  for (const el of interactive) {
+    roleCounts.set(el.role, (roleCounts.get(el.role) ?? 0) + 1);
+  }
+  for (const [role, count] of roleCounts) {
+    invariants.push({
+      description: `${count} ${role} element(s) expected`,
+      check: "element-count",
+      cost: "low",
+    });
   }
 
   // ラベルなし要素の警告
@@ -254,6 +265,21 @@ function checkInvariant(
       return { invariant: inv, passed: data.screenshotExists, reasoning: data.screenshotExists ? "Screenshot exists" : "No screenshot" };
     case "no-error-state":
       return { invariant: inv, passed: true, reasoning: "Heuristic check (a11y-based) — OK" };
+    case "element-count": {
+      const match = inv.description.match(/^(\d+)\s+(\w+)\s+element/);
+      if (!match) return { invariant: inv, passed: true, reasoning: "Could not parse element-count invariant" };
+      const expectedCount = parseInt(match[1], 10);
+      const role = match[2];
+      const actualCount = countRole(data.a11yTree, role);
+      const passed = actualCount === expectedCount;
+      return {
+        invariant: inv,
+        passed,
+        reasoning: passed
+          ? `${role}: ${actualCount} found (expected ${expectedCount})`
+          : `${role}: ${actualCount} found but expected ${expectedCount}`,
+      };
+    }
     default:
       return { invariant: inv, passed: true, reasoning: `Check "${inv.check ?? "none"}" — passed (no verifier)` };
   }
@@ -270,6 +296,13 @@ function findRole(node: A11yNode, role: string): boolean {
     if (findRole(child, role)) return true;
   }
   return false;
+}
+
+function countRole(node: A11yNode, role: string): number {
+  let count = 0;
+  if (node.role === role) count++;
+  for (const child of node.children ?? []) count += countRole(child, role);
+  return count;
 }
 
 function countUnlabeled(node: A11yNode): number {
