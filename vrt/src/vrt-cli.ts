@@ -36,7 +36,8 @@ import { crossValidate, crossValidationToQualityChecks } from "./cross-validatio
 import { loadExpectation, crossValidateWithExpectation, scoreLoop } from "./expectation.ts";
 import { runQualityChecks } from "./quality.ts";
 import { runVerificationLoop, generateReport as generateAgentReport } from "./agent.ts";
-import type { VrtDiff, A11yDiff, VisualSemanticDiff, UnifiedAgentContext, VrtExpectation, PageExpectation } from "./types.ts";
+import { introspect, introspectToSpec, verifySpec } from "./introspect.ts";
+import type { VrtDiff, A11yDiff, VisualSemanticDiff, UnifiedAgentContext, VrtExpectation, PageExpectation, UiSpec, A11yNode } from "./types.ts";
 
 // ---- Paths ----
 // baselines/ と snapshots/ は test-results/ の外に配置 (Playwright が test-results をクリアするため)
@@ -48,6 +49,7 @@ const SNAPSHOTS_DIR = join(VRT_ROOT, "snapshots");
 const OUTPUT_DIR = join(VRT_ROOT, "output");
 const REPORT_PATH = join(VRT_ROOT, "vrt-report.json");
 const EXPECTATION_PATH = join(VRT_ROOT, "expectation.json");
+const SPEC_PATH = join(VRT_ROOT, "spec.json");
 
 const EXEC_OPTS: ExecSyncOptions = {
   cwd: VRT_ROOT,
@@ -493,6 +495,103 @@ async function affectedCmd() {
   }
 }
 
+async function introspectCmd() {
+  const dir = existsSync(SNAPSHOTS_DIR) ? SNAPSHOTS_DIR : BASELINES_DIR;
+  if (!existsSync(dir)) {
+    console.error("No snapshots or baselines found. Run `vrt init` or `vrt capture` first.");
+    process.exit(1);
+  }
+
+  console.log(`=== Introspect: ${dir} ===\n`);
+  const result = await introspect(dir);
+
+  for (const page of result.pages) {
+    console.log(`## ${page.testId}`);
+    console.log(`  ${page.description}`);
+    console.log(`  Landmarks: ${page.landmarks.map((l) => `${l.role}(${l.name || "-"})`).join(", ") || "none"}`);
+    console.log(`  Interactive: ${page.stats.interactiveCount} (${page.stats.unlabeledCount} unlabeled)`);
+    console.log(`  Invariants: ${page.suggestedInvariants.length}`);
+    console.log();
+  }
+
+  // Generate spec
+  const spec = introspectToSpec(result);
+  await writeFile(SPEC_PATH, JSON.stringify(spec, null, 2));
+  console.log(`Spec written to: ${SPEC_PATH}`);
+  console.log(`${spec.pages.length} page(s), ${spec.pages.reduce((s, p) => s + p.invariants.length, 0)} invariants`);
+}
+
+async function specVerifyCmd() {
+  if (!existsSync(SPEC_PATH)) {
+    console.error("No spec.json found. Run `vrt introspect` first.");
+    process.exit(1);
+  }
+
+  const dir = existsSync(SNAPSHOTS_DIR) ? SNAPSHOTS_DIR : BASELINES_DIR;
+  if (!existsSync(dir)) {
+    console.error("No snapshots or baselines found.");
+    process.exit(1);
+  }
+
+  console.log("=== Spec Verify ===\n");
+  const spec: UiSpec = JSON.parse(await readFile(SPEC_PATH, "utf-8"));
+  console.log(`Spec: "${spec.description}"`);
+  console.log(`${spec.pages.length} page(s), ${spec.global?.length ?? 0} global invariant(s)\n`);
+
+  // Load a11y trees
+  const pageData = new Map<string, { a11yTree?: A11yNode; screenshotExists: boolean }>();
+  const a11yFiles = await listFiles(dir, ".a11y.json");
+  for (const file of a11yFiles) {
+    const testId = file.replace(/\.a11y\.json$/, "");
+    try {
+      const tree = JSON.parse(await readFile(join(dir, file), "utf-8"));
+      const png = join(dir, `${testId}.png`);
+      pageData.set(testId, { a11yTree: tree, screenshotExists: existsSync(png) });
+    } catch {
+      // skip
+    }
+  }
+
+  // Get changed files for dep graph skipping
+  let changedFiles: string[] | undefined;
+  try {
+    const diff = execSync("git diff --name-only HEAD", { cwd: PROJECT_ROOT, encoding: "utf-8" });
+    changedFiles = diff.trim().split("\n").filter(Boolean);
+  } catch {
+    // no git
+  }
+
+  const result = verifySpec(spec, pageData, changedFiles);
+
+  let totalPassed = 0;
+  let totalFailed = 0;
+  let totalSkipped = 0;
+
+  for (const page of result.results) {
+    const passed = page.checked.filter((c) => c.passed).length;
+    const failed = page.checked.filter((c) => !c.passed).length;
+    totalPassed += passed;
+    totalFailed += failed;
+    totalSkipped += page.skipped.length;
+
+    const icon = failed === 0 ? "OK" : "NG";
+    console.log(`[${icon}] ${page.testId}: ${passed} passed, ${failed} failed, ${page.skipped.length} skipped`);
+
+    for (const c of page.checked.filter((c) => !c.passed)) {
+      console.log(`  FAIL: ${c.invariant.description} — ${c.reasoning}`);
+    }
+    for (const s of page.skipped) {
+      console.log(`  SKIP: ${s.invariant.description} — ${s.reason}`);
+    }
+  }
+
+  console.log(`\nTotal: ${totalPassed} passed, ${totalFailed} failed, ${totalSkipped} skipped`);
+
+  if (totalFailed > 0) {
+    process.exit(1);
+  }
+}
+
 // ---- Helpers ----
 
 async function listFiles(dir: string, suffix: string): Promise<string[]> {
@@ -516,6 +615,8 @@ const commands: Record<string, () => Promise<void>> = {
   report,
   graph,
   affected: affectedCmd,
+  introspect: introspectCmd,
+  "spec-verify": specVerifyCmd,
 };
 
 const handler = commands[command];
@@ -537,6 +638,8 @@ Commands:
   report     Show last verification report
   graph      Display dependency graph
   affected   Show components affected by current changes
+  introspect Generate spec.json from current a11y snapshots
+  spec-verify Verify spec.json invariants against current state
 
 Workflow for coding agents:
   1. vrt init            — One-time baseline setup

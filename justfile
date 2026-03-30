@@ -96,6 +96,14 @@ vrt-report:
 vrt-affected:
   tsx vrt/src/vrt-cli.ts affected
 
+# Generate spec.json from current state
+vrt-introspect:
+  tsx vrt/src/vrt-cli.ts introspect
+
+# Verify spec.json invariants
+vrt-spec-verify:
+  tsx vrt/src/vrt-cli.ts spec-verify
+
 # Run VRT unit tests
 vrt-test:
   cd vrt && node --test --experimental-strip-types src/**/*.test.ts
