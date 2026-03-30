@@ -116,6 +116,10 @@ vrt-demo:
 vrt-demo-fix:
   npx tsx vrt/src/demo-fix-loop.ts
 
+# Run multi-scenario demo (3 complex scenarios)
+vrt-demo-multi:
+  npx tsx vrt/src/demo-scenarios.ts
+
 # Run VRT unit tests
 vrt-test:
   cd vrt && node --test --experimental-strip-types src/**/*.test.ts
