@@ -73,7 +73,7 @@ export interface RunStepFn {
 export async function runGoal(
   goal: Goal,
   baseline: A11yNode,
-  loadSnapshot: (step: GoalStep) => Promise<A11yNode>,
+  loadSnapshot: (step: GoalStep, retryCount: number) => Promise<A11yNode>,
   opts: { maxRetries?: number } = {}
 ): Promise<GoalRunnerState> {
   const maxRetries = opts.maxRetries ?? 3;
@@ -84,6 +84,12 @@ export async function runGoal(
     status: "running",
   };
 
+  if (goal.steps.length === 0) {
+    state.status = "completed";
+    state.finalScore = computeGoalScore(state);
+    return state;
+  }
+
   let currentBaseline = baseline;
 
   for (let i = 0; i < goal.steps.length; i++) {
@@ -91,15 +97,16 @@ export async function runGoal(
     const step = goal.steps[i];
     let passed = false;
     let retries = 0;
+    let lastSnapshot!: A11yNode;
     let reasoning!: ReasoningChain;
     let specResult: SpecVerifyResult | undefined;
 
     while (!passed && retries <= maxRetries) {
-      const snapshot = await loadSnapshot(step);
+      lastSnapshot = await loadSnapshot(step, retries);
 
       // a11y diff
       const baseSnap = parsePlaywrightA11ySnapshot("page", "page", currentBaseline as any);
-      const snapSnap = parsePlaywrightA11ySnapshot("page", "page", snapshot as any);
+      const snapSnap = parsePlaywrightA11ySnapshot("page", "page", lastSnapshot as any);
       const diff = diffA11yTrees(baseSnap, snapSnap);
 
       // reasoning
@@ -114,9 +121,9 @@ export async function runGoal(
       reasoning = reasonAboutChanges("page", step.expectation, diff.changes.length > 0 ? diff : undefined, intent);
 
       // spec verify (long-cycle check against baseline invariants)
-      const introspection = quickIntrospect(snapshot);
+      const introspection = quickIntrospect(lastSnapshot);
       const spec = introspectToSpec({ generatedAt: "goal-run", pages: [introspection] });
-      const pageData = new Map([["page", { a11yTree: snapshot, screenshotExists: true }]]);
+      const pageData = new Map([["page", { a11yTree: lastSnapshot, screenshotExists: true }]]);
       specResult = verifySpec(spec, pageData);
 
       // 判定: reasoning が realized or unexpected-side-effects なら OK
@@ -141,14 +148,15 @@ export async function runGoal(
       break;
     }
 
-    // 次の step のベースラインは今の snapshot
-    currentBaseline = await loadSnapshot(step);
+    // 次の step のベースラインはキャッシュ済み snapshot (double-call 回避)
+    currentBaseline = lastSnapshot;
   }
 
   if (state.status === "running") {
     // 全 step 通過 → ゴール判定
     if (goal.finalInvariants) {
-      const finalSnapshot = await loadSnapshot(goal.steps[goal.steps.length - 1]);
+      const lastStep = goal.steps[goal.steps.length - 1];
+      const finalSnapshot = await loadSnapshot(lastStep, 0);
       const baseSnap = parsePlaywrightA11ySnapshot("page", "page", baseline as any);
       const snapSnap = parsePlaywrightA11ySnapshot("page", "page", finalSnapshot as any);
       const finalDiff = diffA11yTrees(baseSnap, snapSnap);
@@ -203,8 +211,10 @@ function quickIntrospect(tree: A11yNode) {
   const INTERACTIVE = new Set(["button", "link", "textbox", "checkbox", "radio", "searchbox", "switch"]);
   const landmarks: { role: string; name: string }[] = [];
   const interactive: { role: string; name: string; hasLabel: boolean }[] = [];
+  let totalNodes = 0;
 
   function walk(node: A11yNode) {
+    totalNodes++;
     if (LANDMARK.has(node.role)) landmarks.push({ role: node.role, name: node.name || "" });
     if (INTERACTIVE.has(node.role)) interactive.push({ role: node.role, name: node.name || "", hasLabel: !!node.name });
     for (const c of node.children ?? []) walk(c);
@@ -216,7 +226,7 @@ function quickIntrospect(tree: A11yNode) {
     description: "Page",
     landmarks,
     interactiveElements: interactive,
-    stats: { totalNodes: 0, landmarkCount: landmarks.length, interactiveCount: interactive.length, unlabeledCount: interactive.filter((e) => !e.hasLabel).length, headingLevels: [] as number[] },
+    stats: { totalNodes, landmarkCount: landmarks.length, interactiveCount: interactive.length, unlabeledCount: interactive.filter((e) => !e.hasLabel).length, headingLevels: [] as number[] },
     suggestedInvariants: [
       ...landmarks.map((l) => ({ description: `${l.role} landmark "${l.name || "(unnamed)"}" is present`, check: "landmark-exists" as const, cost: "low" as const })),
       { description: "All interactive elements have labels", check: "label-present" as const, cost: "low" as const },

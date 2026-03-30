@@ -72,7 +72,7 @@ describe("Goal Runner: dark mode implementation", () => {
     const state = await runGoal(
       darkModeGoal,
       baseline,
-      async (step) => loadTree(step.snapshotFile!),
+      async (step, _retry) => loadTree(step.snapshotFile!),
     );
 
     console.log(formatGoalReport(state));
@@ -103,7 +103,7 @@ describe("Goal Runner: dark mode implementation", () => {
     const state = await runGoal(
       brokenGoal,
       baseline,
-      async (step) => loadTree(step.snapshotFile!),
+      async (step, _retry) => loadTree(step.snapshotFile!),
       { maxRetries: 0 },
     );
 
@@ -118,7 +118,7 @@ describe("Goal Runner: dark mode implementation", () => {
     const state = await runGoal(
       darkModeGoal,
       baseline,
-      async (step) => loadTree(step.snapshotFile!),
+      async (step, _retry) => loadTree(step.snapshotFile!),
     );
 
     const score = state.finalScore!;
@@ -134,7 +134,7 @@ describe("Goal Runner: dark mode implementation", () => {
     const state = await runGoal(
       darkModeGoal,
       baseline,
-      async (step) => loadTree(step.snapshotFile!),
+      async (step, _retry) => loadTree(step.snapshotFile!),
     );
 
     // Step 1: switch added
@@ -178,7 +178,7 @@ describe("Goal Runner: single-step goal", () => {
       successCriteria: "Button says Submit",
     };
 
-    const state = await runGoal(goal, baseline, async (step) => loadTree(step.snapshotFile!));
+    const state = await runGoal(goal, baseline, async (step, _r) => loadTree(step.snapshotFile!));
     assert.equal(state.status, "completed");
     assert.equal(state.finalScore!.stepSuccessRate, 1);
   });
@@ -212,7 +212,83 @@ describe("Goal Runner: goal with final invariant check", () => {
       ],
     };
 
-    const state = await runGoal(goal, baseline, async (step) => loadTree(step.snapshotFile!));
+    const state = await runGoal(goal, baseline, async (step, _r) => loadTree(step.snapshotFile!));
     assert.equal(state.status, "completed");
+  });
+});
+
+describe("Goal Runner: retry behavior", () => {
+  it("should retry and succeed on second attempt", async () => {
+    const baseline = await loadTree("baseline.a11y.json");
+
+    const goal: Goal = {
+      description: "Add search with retry",
+      steps: [{
+        description: "Add search form",
+        snapshotFile: "snapshot-search-added.a11y.json",
+        expectation: {
+          testId: "page",
+          expect: "Search landmark added",
+          expectedA11yChanges: [{ description: "Search landmark added" }],
+        },
+      }],
+      successCriteria: "Search exists",
+    };
+
+    // First call returns baseline (no change → fail), second returns search-added (pass)
+    let callCount = 0;
+    const state = await runGoal(goal, baseline, async (step, retryCount) => {
+      callCount++;
+      if (retryCount === 0) return baseline; // fail first
+      return loadTree(step.snapshotFile!); // succeed on retry
+    }, { maxRetries: 2 });
+
+    assert.equal(state.status, "completed");
+    assert.equal(state.stepResults[0].retries, 1);
+    assert.ok(state.stepResults[0].passed);
+    assert.ok(callCount >= 2, `Should call loadSnapshot at least twice: ${callCount}`);
+    // Score should reflect the retry penalty
+    assert.ok(state.finalScore!.averageStepScore < 100, `Score should be penalized: ${state.finalScore!.averageStepScore}`);
+  });
+
+  it("should fail after max retries exhausted", async () => {
+    const baseline = await loadTree("baseline.a11y.json");
+
+    const goal: Goal = {
+      description: "Impossible task",
+      steps: [{
+        description: "This always fails",
+        snapshotFile: "baseline.a11y.json", // same as baseline → no changes → not-realized
+        expectation: {
+          testId: "page",
+          expect: "Something new added",
+          expectedA11yChanges: [{ description: "New element added" }],
+        },
+      }],
+      successCriteria: "Never",
+    };
+
+    const state = await runGoal(goal, baseline, async (_step, _retry) => baseline, { maxRetries: 2 });
+
+    assert.equal(state.status, "failed");
+    assert.equal(state.stepResults[0].retries, 3); // 0 + 3 retries
+    assert.ok(!state.stepResults[0].passed);
+  });
+});
+
+describe("Goal Runner: empty steps", () => {
+  it("should complete immediately with no steps", async () => {
+    const baseline = await loadTree("baseline.a11y.json");
+
+    const goal: Goal = {
+      description: "Empty goal",
+      steps: [],
+      successCriteria: "Nothing to do",
+    };
+
+    const state = await runGoal(goal, baseline, async () => baseline);
+    assert.equal(state.status, "completed");
+    assert.equal(state.stepResults.length, 0);
+    assert.ok(state.finalScore);
   });
 });

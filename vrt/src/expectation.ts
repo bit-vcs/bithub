@@ -73,31 +73,25 @@ export function matchA11yExpectation(
     };
   }
 
-  // マッチング: expected vs actual
+  // マッチング: expected vs actual (1パスで matched indices を追跡)
   const expected = pageExp.expectedA11yChanges ?? [];
   const actual = [...a11yDiff.changes];
   const matchedChanges: string[] = [];
   const matchedActualIdx = new Set<number>();
+  const matchedExpIdx = new Set<number>();
 
-  for (const exp of expected) {
+  for (let ei = 0; ei < expected.length; ei++) {
+    const exp = expected[ei];
     const idx = actual.findIndex((a, i) => !matchedActualIdx.has(i) && matchesSingleA11yChange(exp, a));
     if (idx >= 0) {
       matchedChanges.push(`${exp.description} ↔ ${describe(actual[idx])}`);
       matchedActualIdx.add(idx);
-    }
-  }
-
-  // Track which expected items were matched by index
-  const matchedExpIndices = new Set<number>();
-  for (let i = 0; i < expected.length; i++) {
-    const idx = actual.findIndex((a, ai) => !matchedActualIdx.has(ai) && matchesSingleA11yChange(expected[i], a));
-    if (matchedChanges.some((m) => m.startsWith(expected[i].description))) {
-      matchedExpIndices.add(i);
+      matchedExpIdx.add(ei);
     }
   }
 
   const unmatchedExpDescs = expected
-    .filter((_, i) => !matchedExpIndices.has(i))
+    .filter((_, i) => !matchedExpIdx.has(i))
     .map((e) => e.description);
 
   const unexpectedChanges = actual
@@ -221,9 +215,9 @@ function inferVisualMode(expect?: string): PageExpectation["visual"] {
 function inferA11yMode(expect?: string): PageExpectation["a11y"] {
   if (!expect) return undefined;
   const lower = expect.toLowerCase();
-  if (/no\s*change|unchanged|same/.test(lower)) return "no-change";
-  if (/regression|remov|delet|break/.test(lower)) return "regression-expected";
-  if (/chang|modif|updat|add/.test(lower)) return "changed";
+  if (/no\s*change|unchanged|\bsame\b/.test(lower)) return "no-change";
+  if (/regression|\bremov|\bdelet|\bbreak/.test(lower)) return "regression-expected";
+  if (/\bchang|\bmodif|\bupdat|\badded?\b/.test(lower)) return "changed";
   return "any";
 }
 

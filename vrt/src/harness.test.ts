@@ -158,26 +158,12 @@ const scenarios: ScenarioDef[] = [
     snapshot: "snapshot-role-changed.a11y.json",
     intent: { summary: "refactor: convert nav to buttons", changeType: "refactor", expectedVisualChanges: [], expectedA11yChanges: [], affectedComponents: [] },
     correctExpectation: { testId: "home", expect: "No a11y changes expected in refactor", a11y: "no-change" },
-    wrongExpectation: { testId: "home", expect: "No changes at all", a11y: "no-change" },
+    wrongExpectation: { testId: "home", expect: "Search form added to header", a11y: "changed", expectedA11yChanges: [{ description: "Search landmark added" }] },
     expectVerdict: "not-realized",
     // element-count invariant で link→button の数の変化を検出可能
     specShouldFail: true,
   },
 ];
-
-// ---- Harness Results ----
-
-interface HarnessResult {
-  scenario: string;
-  correctExpApproved: boolean;
-  wrongExpRejected: boolean;
-  reasoningVerdict: string;
-  reasoningCorrect: boolean;
-  specDetection: boolean;
-  a11yIssuesDetected: number;
-}
-
-const results: HarnessResult[] = [];
 
 describe("Harness: full pipeline quality", () => {
   for (const sc of scenarios) {
@@ -256,10 +242,14 @@ describe("Harness: full pipeline quality", () => {
 });
 
 // ---- Summary (runs after all tests) ----
-describe("Harness: score summary", () => {
-  it("should pass all 40 checks", () => {
-    // This test serves as a sentinel — if we get here, all above passed
-    assert.ok(true, "All harness checks passed");
+describe("Harness: all 10 scenarios covered", () => {
+  it("should have tested all scenario types", () => {
+    assert.equal(scenarios.length, 10, "10 scenarios defined");
+    const types = new Set(scenarios.map((s) => s.intent.changeType));
+    assert.ok(types.has("style"), "Has style scenario");
+    assert.ok(types.has("feature"), "Has feature scenario");
+    assert.ok(types.has("refactor"), "Has refactor scenario");
+    assert.ok(types.has("a11y"), "Has a11y scenario");
   });
 });
 

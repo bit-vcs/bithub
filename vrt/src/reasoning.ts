@@ -131,22 +131,42 @@ function findBestMatchIdx(
   changes: A11yChange[],
   consumed: Set<number>
 ): number {
-  // 構造化フィールドで厳密マッチ
+  // 構造化フィールドで best-score マッチ (greedy findIndex ではなく最適を選ぶ)
   if (exp.type || exp.role || exp.name) {
-    return changes.findIndex((c, i) => {
-      if (consumed.has(i)) return false;
-      if (exp.type && c.type !== exp.type) return false;
+    let bestIdx = -1;
+    let bestFieldScore = 0;
+
+    for (let i = 0; i < changes.length; i++) {
+      if (consumed.has(i)) continue;
+      const c = changes[i];
+      let fieldScore = 0;
+      let fieldCount = 0;
+
+      if (exp.type) {
+        fieldCount++;
+        if (c.type === exp.type) fieldScore++;
+        else continue; // type mismatch is disqualifying
+      }
       if (exp.role) {
+        fieldCount++;
         const inPath = c.path.toLowerCase().includes(exp.role.toLowerCase());
         const inDesc = c.description.toLowerCase().includes(exp.role.toLowerCase());
-        if (!inPath && !inDesc) return false;
+        if (inPath || inDesc) fieldScore++;
+        else continue;
       }
       if (exp.name) {
-        const inDesc = c.description.toLowerCase().includes(exp.name.toLowerCase());
-        if (!inDesc) return false;
+        fieldCount++;
+        if (c.description.toLowerCase().includes(exp.name.toLowerCase())) fieldScore++;
+        else continue;
       }
-      return true;
-    });
+
+      if (fieldScore > bestFieldScore) {
+        bestFieldScore = fieldScore;
+        bestIdx = i;
+      }
+    }
+
+    if (bestIdx >= 0) return bestIdx;
   }
 
   // description fuzzy マッチ
@@ -167,8 +187,8 @@ function findBestMatchIdx(
     const target = `${change.type} ${change.description} ${change.path}`.toLowerCase();
     const matched = keywords.filter((k) => target.includes(k)).length;
     const score = keywords.length > 0 ? matched / keywords.length : 0;
-    // 少なくとも2語 or 50%以上一致で候補とする
-    if (score > bestScore && (matched >= 2 || (matched >= 1 && score >= 0.5))) {
+    // 少なくとも2語一致で候補とする (false positive 防止)
+    if (score > bestScore && matched >= 2) {
       bestScore = score;
       bestIdx = i;
     }
