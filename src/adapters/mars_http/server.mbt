@@ -244,6 +244,9 @@ fn dispatch_route(
     let page = render_release_detail_page(api, id)
     return ctx.html(page.html, status=page.status)
   }
+  if route == "/notifications" {
+    return ctx.html(render_notifications_page(api), status=200)
+  }
   if route == "/graph" {
     return ctx.html(render_activity_graph_page(api), status=200)
   }

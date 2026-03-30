@@ -157,38 +157,40 @@ fn render_home_page() -> String {
     #|</script>
   render_layout("bithub", [
     @luna.raw_html("<style>" + home_css + "</style>"),
-    @luna.raw_html(
-      #|<div class="landing">
-      #|<h1>bithub</h1>
-      #|<p>Browse and collaborate on any GitHub repository.</p>
-      #|
-      #|<div class="section">
-      #|  <h2>Identity</h2>
-      #|  <label>Display Name</label>
-      #|  <input id="id-name" placeholder="anonymous" onchange="updateDisplayName()" />
-      #|  <div class="identity-info">Fingerprint: <code id="id-fp">loading...</code> <span id="id-status"></span></div>
-      #|  <div class="btn-row">
-      #|    <button class="btn btn-secondary" onclick="exportIdentity()">Export key</button>
-      #|    <button class="btn btn-secondary" onclick="importIdentity()">Import key</button>
-      #|  </div>
-      #|  <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
-      #|    <label>Storage</label>
-      #|    <div class="identity-info">Mode: <code id="storage-mode">indexeddb</code></div>
-      #|    <button class="btn btn-secondary" style="margin-top:8px;" onclick="connectFS()">Connect File System</button>
-      #|  </div>
-      #|</div>
-      #|
-      #|<form class="section" onsubmit="openWorkspace(event)">
-      #|  <h2>Open Repository</h2>
-      #|  <label>Repository (owner/repo)</label>
-      #|  <input id="ws-repo" placeholder="e.g. bit-vcs/bit-relay" required />
-      #|  <button id="ws-btn" class="btn" type="submit">Clone &amp; Open</button>
-      #|  <div id="ws-progress" class="ws-progress"><div class="ws-progress-track"><div id="ws-bar" class="ws-progress-bar" style="width:0%"></div></div><div id="ws-progress-text" class="ws-progress-text"></div></div>
-      #|</form>
-      #|
-      #|<div class="ws-recent"><h3>Recent workspaces</h3><div id="ws-recent-list"></div></div>
-      #|</div>
-    ),
+    @luna.raw_html({
+      let html =
+        #|<div class="landing">
+        #|<h1>bithub</h1>
+        #|<p>Browse and collaborate on any GitHub repository.</p>
+        #|
+        #|<div class="section">
+        #|  <h2>Identity</h2>
+        #|  <label>Display Name</label>
+        #|  <input id="id-name" placeholder="anonymous" onchange="updateDisplayName()" />
+        #|  <div class="identity-info">Fingerprint: <code id="id-fp">loading...</code> <span id="id-status"></span></div>
+        #|  <div class="btn-row">
+        #|    <button class="btn btn-secondary" onclick="exportIdentity()">Export key</button>
+        #|    <button class="btn btn-secondary" onclick="importIdentity()">Import key</button>
+        #|  </div>
+        #|  <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--border);">
+        #|    <label>Storage</label>
+        #|    <div class="identity-info">Mode: <code id="storage-mode">indexeddb</code></div>
+        #|    <button class="btn btn-secondary" style="margin-top:8px;" onclick="connectFS()">Connect File System</button>
+        #|  </div>
+        #|</div>
+        #|
+        #|<form class="section" onsubmit="openWorkspace(event)">
+        #|  <h2>Open Repository</h2>
+        #|  <label>Repository (owner/repo)</label>
+        #|  <input id="ws-repo" placeholder="e.g. bit-vcs/bit-relay" required />
+        #|  <button id="ws-btn" class="btn" type="submit">Clone &amp; Open</button>
+        #|  <div id="ws-progress" class="ws-progress"><div class="ws-progress-track"><div id="ws-bar" class="ws-progress-bar" style="width:0%"></div></div><div id="ws-progress-text" class="ws-progress-text"></div></div>
+        #|</form>
+        #|
+        #|<div class="ws-recent"><h3>Recent workspaces</h3><div id="ws-recent-list"></div></div>
+        #|</div>
+      html
+    }),
   ]) + home_js
 }
 

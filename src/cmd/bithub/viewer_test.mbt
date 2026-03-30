@@ -73,7 +73,7 @@ test "render_layout uses collapsible tree for filer" {
   assert_true(html.contains("class=\"file-tree-dir\""))
   assert_true(html.contains("data-tree-path=\"src\""))
   assert_true(html.contains("[*] main.mbt"))
-  assert_true(not(html.contains("[*] src/cmd/bithub/main.mbt")))
+  assert_true(!html.contains("[*] src/cmd/bithub/main.mbt"))
   assert_true(html.contains("<summary"))
 }
 

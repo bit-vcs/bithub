@@ -601,7 +601,7 @@ fn build_tree_nodes(
     match classify_child_path(path, prefix) {
       Some((name, is_dir)) =>
         if is_dir {
-          if not(dir_names.contains(name)) {
+          if !dir_names.contains(name) {
             dir_names.push(name)
           }
         } else {
@@ -786,7 +786,7 @@ fn classify_child_path(path : String, prefix : String) -> (String, Bool)? {
   }
 
   let base = prefix + "/"
-  if not(path.has_prefix(base)) {
+  if !path.has_prefix(base) {
     return None
   }
   let rest = String::unsafe_substring(

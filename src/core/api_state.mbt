@@ -191,7 +191,7 @@ pub fn ApiState::list_entries(
   let entries : Array[FileEntry] = []
   for name in names {
     let full_path = join_path(path, name)
-    entries.push({ name, path: full_path, is_dir: not(self.store.has(full_path)) })
+    entries.push({ name, path: full_path, is_dir: !self.store.has(full_path) })
   }
   entries
 }
@@ -452,10 +452,10 @@ pub fn ApiState::list_branches(self : ApiState) -> Array[BranchEntry] {
     }
   }
   entries.sort_by(fn(a, b) {
-    if a.current && not(b.current) {
+    if a.current && !b.current {
       return -1
     }
-    if not(a.current) && b.current {
+    if !a.current && b.current {
       return 1
     }
     String::compare(a.name, b.name)
@@ -504,7 +504,7 @@ pub fn ApiState::list_workflows(self : ApiState) -> Array[WorkflowEntry] {
   names.sort_by(fn(a, b) { String::compare(a, b) })
   for name in names {
     let path = workflow_dir + "/" + name
-    if not(name.has_suffix(".yml") || name.has_suffix(".yaml")) {
+    if !(name.has_suffix(".yml") || name.has_suffix(".yaml")) {
       continue
     }
     match self.store.get(path) {
@@ -1685,6 +1685,197 @@ pub fn ApiState::get_issue_milestone(
   }
 }
 
+// ---- PR Reviews ----
+
+///|
+pub struct PullRequestReview {
+  id : String
+  pr_id : String
+  author : String
+  state : String // "approved", "changes_requested", "commented"
+  body : String
+  created_at : String
+}
+
+///|
+pub fn ApiState::submit_pr_review(
+  self : ApiState,
+  pr_id : String,
+  author : String,
+  state : String,
+  body : String,
+  timestamp : String,
+) -> String {
+  if self.store.get("prs/" + pr_id + "/meta") is None {
+    return ""
+  }
+  let existing = self.store.list("prs/" + pr_id + "/reviews")
+  let new_id = existing.length().to_string()
+  let meta = [
+    "author=" + author,
+    "state=" + state,
+    "body=" + body,
+    "created_at=" + timestamp,
+  ].join("\n")
+  self.store.set_string("prs/" + pr_id + "/reviews/" + new_id, meta)
+  new_id
+}
+
+///|
+pub fn ApiState::list_pr_reviews(
+  self : ApiState,
+  pr_id : String,
+) -> Array[PullRequestReview] {
+  let ids = self.store.list("prs/" + pr_id + "/reviews")
+  let entries : Array[PullRequestReview] = []
+  for id in ids {
+    match self.store.get("prs/" + pr_id + "/reviews/" + id) {
+      Some(bytes) => {
+        let fields = parse_kv_fields(@utf8.decode_lossy(bytes))
+        entries.push({
+          id,
+          pr_id,
+          author: fields.get("author").unwrap_or(""),
+          state: fields.get("state").unwrap_or("commented"),
+          body: fields.get("body").unwrap_or(""),
+          created_at: fields.get("created_at").unwrap_or(""),
+        })
+      }
+      None => ()
+    }
+  }
+  entries
+}
+
+///|
+pub fn ApiState::pr_review_summary(
+  self : ApiState,
+  pr_id : String,
+) -> Map[String, String] {
+  // Returns latest review state per author
+  let reviews = self.list_pr_reviews(pr_id)
+  let latest : Map[String, String] = {}
+  for review in reviews {
+    latest.set(review.author, review.state)
+  }
+  latest
+}
+
+// ---- Notifications ----
+
+///|
+pub struct NotificationEntry {
+  id : String
+  kind : String // "issue", "pr", "review", "ci", "release"
+  title : String
+  target_url : String
+  actor : String
+  created_at : String
+  read : Bool
+}
+
+///|
+pub fn ApiState::add_notification(
+  self : ApiState,
+  kind : String,
+  title : String,
+  target_url : String,
+  actor : String,
+  timestamp : String,
+) -> String {
+  let existing = self.store.list("notifications")
+  let mut max_id = 0
+  for id_str in existing {
+    let n = parse_int_safe(id_str)
+    if n > max_id {
+      max_id = n
+    }
+  }
+  let new_id = (max_id + 1).to_string()
+  let meta = [
+    "kind=" + kind,
+    "title=" + title,
+    "target_url=" + target_url,
+    "actor=" + actor,
+    "created_at=" + timestamp,
+    "read=false",
+  ].join("\n")
+  self.store.set_string("notifications/" + new_id, meta)
+  new_id
+}
+
+///|
+pub fn ApiState::list_notifications(
+  self : ApiState,
+  unread_only~ : Bool = false,
+) -> Array[NotificationEntry] {
+  let ids = self.store.list("notifications")
+  let entries : Array[NotificationEntry] = []
+  for id in ids {
+    match self.store.get("notifications/" + id) {
+      Some(bytes) => {
+        let fields = parse_kv_fields(@utf8.decode_lossy(bytes))
+        let is_read = fields.get("read").unwrap_or("false") == "true"
+        if unread_only && is_read {
+          continue
+        }
+        entries.push({
+          id,
+          kind: fields.get("kind").unwrap_or(""),
+          title: fields.get("title").unwrap_or(""),
+          target_url: fields.get("target_url").unwrap_or(""),
+          actor: fields.get("actor").unwrap_or(""),
+          created_at: fields.get("created_at").unwrap_or(""),
+          read: is_read,
+        })
+      }
+      None => ()
+    }
+  }
+  entries.sort_by(fn(a, b) { String::compare(b.created_at, a.created_at) })
+  entries
+}
+
+///|
+pub fn ApiState::mark_notification_read(
+  self : ApiState,
+  id : String,
+) -> Bool {
+  match self.store.get("notifications/" + id) {
+    Some(bytes) => {
+      let fields = parse_kv_fields(@utf8.decode_lossy(bytes))
+      let meta = [
+        "kind=" + fields.get("kind").unwrap_or(""),
+        "title=" + fields.get("title").unwrap_or(""),
+        "target_url=" + fields.get("target_url").unwrap_or(""),
+        "actor=" + fields.get("actor").unwrap_or(""),
+        "created_at=" + fields.get("created_at").unwrap_or(""),
+        "read=true",
+      ].join("\n")
+      self.store.set_string("notifications/" + id, meta)
+      true
+    }
+    None => false
+  }
+}
+
+///|
+pub fn ApiState::mark_all_notifications_read(self : ApiState) -> Int {
+  let ids = self.store.list("notifications")
+  let mut count = 0
+  for id in ids {
+    if self.mark_notification_read(id) {
+      count += 1
+    }
+  }
+  count
+}
+
+///|
+pub fn ApiState::unread_notification_count(self : ApiState) -> Int {
+  self.list_notifications(unread_only=true).length()
+}
+
 // ---- PR Review Comments ----
 
 ///|
@@ -2091,7 +2282,7 @@ pub fn ApiState::compare_commits(
       Some(detail) => {
         commits.push(detail.commit)
         for df in detail.diff_files {
-          if not(seen.contains(df.path)) {
+          if !seen.contains(df.path) {
             seen.set(df.path, true)
             all_files.push(df)
           }
@@ -2101,7 +2292,7 @@ pub fn ApiState::compare_commits(
       None => break
     }
   }
-  if not(found_base) && commits.length() == 0 {
+  if !found_base && commits.length() == 0 {
     return None
   }
   Some({ base_sha, head_sha, commits, all_files })

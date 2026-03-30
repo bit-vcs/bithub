@@ -48,9 +48,7 @@ Last updated: 2026-03-30
 - [x] Fix deprecated is_none()/f!() and strconv import (done 2026-03-17, by agents)
 - [x] Move parse_kv_fields to storage.mbt (done 2026-03-17, by agent)
 - [x] Make route tests resilient (done 2026-03-17, by agent)
-- [ ] Fix remaining 9 deprecated warnings
-  - `fn(ctx)` → arrow function in 8 async handlers (server.mbt)
-  - `fn meth(self : Type, ..)` → `fn Type::meth(..)` in fs_storage.mbt
+- [x] Fix all deprecated not()/strconv warnings (done 2026-03-30, by agent)
 
 ### Agent harness
 

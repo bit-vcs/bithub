@@ -95,7 +95,7 @@ pub fn ApiState::process_relay_webhook(
   let workflow_dir = ".github/workflows"
   let names = self.store.list(workflow_dir)
   for name in names {
-    if not(name.has_suffix(".yml") || name.has_suffix(".yaml")) {
+    if !(name.has_suffix(".yml") || name.has_suffix(".yaml")) {
       continue
     }
     let path = workflow_dir + "/" + name
@@ -483,7 +483,7 @@ fn deserialize_ci_step_run(text : String) -> CiStepRun? {
     return None
   }
   let idx = try {
-    @strconv.parse_int(idx_str)
+    @string.parse_int(idx_str)
   } catch {
     _ => return None
   }

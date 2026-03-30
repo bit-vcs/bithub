@@ -1,4 +1,5 @@
 import {
+  "moonbitlang/core/string",
   "mizchi/bit" @bit,
   "mizchi/bit/lib" @bitlib,
   "mizchi/bit/x/hub" @hub,
@@ -14,11 +15,11 @@ import {
   "mizchi/markdown/syntree_api" @mdsyntree,
   "mizchi/sol" @sol,
   "moonbitlang/core/json" @json,
-  "moonbitlang/core/strconv" @strconv,
   "moonbitlang/x/fs",
 }
 
 import {
+  "moonbitlang/core/string",
   "moonbitlang/core/bench" @bench,
 } for "test"
 

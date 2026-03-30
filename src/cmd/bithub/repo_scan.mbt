@@ -55,7 +55,7 @@ fn scan_repo_files_recursive(
     if out.length() >= limit {
       return
     }
-    if not(should_skip_name(name)) {
+    if !should_skip_name(name) {
       let rel_path = if rel_dir.length() == 0 {
         name
       } else {

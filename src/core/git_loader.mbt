@@ -98,7 +98,7 @@ pub fn write_file_and_commit(
   write_file_to_disk(full_path, content)
   let dir = parent_dir(full_path)
   git_exec(dir, "git add " + full_path)
-  let author_arg = if author.length() > 0 && not(author.contains("<")) {
+  let author_arg = if author.length() > 0 && !author.contains("<") {
     " --author=\"" + author + " <" + author + "@bithub>\""
   } else if author.length() > 0 {
     " --author=\"" + author + "\""

@@ -1,9 +1,9 @@
 import {
+  "moonbitlang/core/string" @string,
   "bit-vcs/bithub/cmd/main" @main_cmd,
   "mizchi/mars" @mars,
   "mizchi/js/node/process" @nprocess,
   "moonbitlang/async/js_async" @js_async,
-  "moonbitlang/core/strconv" @strconv,
 }
 
 options(

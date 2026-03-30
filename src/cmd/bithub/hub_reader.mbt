@@ -1,7 +1,7 @@
 ///|
 pub fn load_repo_issues(root : String, limit : Int) -> Array[IssueSummary] {
   let git_dir = @npath.join2(root, ".git")
-  if not(@nfs.existsSync(git_dir)) {
+  if !@nfs.existsSync(git_dir) {
     return []
   }
   let os_fs = JsOsFs::new()
@@ -55,7 +55,7 @@ fn ensure_dir(path : String) -> Unit raise @bit.GitError {
       current + "/" + part
     }
     let exists = @fs.is_dir(current) catch { _ => false }
-    if not(exists) {
+    if !exists {
       @fs.create_dir(current) catch {
         err => raise io_error(err)
       }

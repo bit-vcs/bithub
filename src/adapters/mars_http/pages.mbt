@@ -578,6 +578,51 @@ fn render_pull_detail_page(
         }
         None => ()
       }
+      // PR reviews
+      let reviews = api.list_pr_reviews(id)
+      if reviews.length() > 0 {
+        content.push(
+          @luna.h("h2", [], [@luna.text("Reviews")]),
+        )
+        for review in reviews {
+          let state_icon = match review.state {
+            "approved" => "✅"
+            "changes_requested" => "❌"
+            _ => "💬"
+          }
+          let review_nodes : Array[@luna.Node[Unit, String]] = [
+            @luna.h("p", [], [
+              @luna.text(state_icon + " "),
+              @luna.h("strong", [], [@luna.text(review.author)]),
+              @luna.text(
+                " " +
+                review.state +
+                " · " +
+                format_timestamp(review.created_at),
+              ),
+            ]),
+          ]
+          if review.body.length() > 0 {
+            review_nodes.push(
+              @luna.raw_html(@markdown.md_to_html(review.body)),
+            )
+          }
+          content.push(
+            @luna.h(
+              "div",
+              [
+                (
+                  "style",
+                  @luna.attr_static(
+                    "border:1px solid var(--border);border-radius:6px;padding:12px;margin:8px 0;",
+                  ),
+                ),
+              ],
+              review_nodes,
+            ),
+          )
+        }
+      }
       // PR comments
       let comments = api.list_pr_comments(id)
       if comments.length() > 0 {
@@ -1993,5 +2038,82 @@ fn heatmap_color(count : Int, max_count : Int) -> String {
     2 => "#26a641"
     _ => "#39d353"
   }
+}
+
+// ---- Notifications Page ----
+
+///|
+fn render_notifications_page(api : @core.ApiState) -> String {
+  let notifications = api.list_notifications()
+  let unread = api.unread_notification_count()
+  let rows : Array[@luna.Node[Unit, String]] = []
+  for n in notifications {
+    let kind_icon = match n.kind {
+      "issue" => "🔴"
+      "pr" => "🟣"
+      "review" => "👀"
+      "ci" => "⚙️"
+      "release" => "🏷️"
+      _ => "📌"
+    }
+    let read_style = if n.read {
+      "opacity:0.6;"
+    } else {
+      "font-weight:600;"
+    }
+    rows.push(
+      @luna.h(
+        "tr",
+        [("style", @luna.attr_static(read_style))],
+        [
+          @luna.h("td", [], [@luna.text(kind_icon)]),
+          @luna.h("td", [], [
+            if n.target_url.length() > 0 {
+              @components.link(n.target_url, [@luna.text(n.title)])
+            } else {
+              @luna.text(n.title)
+            },
+          ]),
+          @luna.h("td", [], [@luna.text(n.actor)]),
+          @luna.h("td", [], [
+            @luna.text(format_timestamp(n.created_at)),
+          ]),
+          @luna.h("td", [], [
+            @luna.text(if n.read { "read" } else { "unread" }),
+          ]),
+        ],
+      ),
+    )
+  }
+  if rows.length() == 0 {
+    rows.push(
+      @luna.h("tr", [], [
+        @luna.h("td", [("colspan", @luna.attr_static("5"))], [
+          @luna.text("No notifications"),
+        ]),
+      ]),
+    )
+  }
+  let table = @luna.h("table", [("class", @luna.attr_static("wf-table"))], [
+    @luna.h("thead", [], [
+      @luna.h("tr", [], [
+        @luna.h("th", [], [@luna.text("")]),
+        @luna.h("th", [], [@luna.text("Notification")]),
+        @luna.h("th", [], [@luna.text("Actor")]),
+        @luna.h("th", [], [@luna.text("Time")]),
+        @luna.h("th", [], [@luna.text("Status")]),
+      ]),
+    ]),
+    @luna.h("tbody", [], rows),
+  ])
+  let header_text = if unread > 0 {
+    "Notifications (" + unread.to_string() + " unread)"
+  } else {
+    "Notifications"
+  }
+  render_layout("Notifications", [
+    @luna.h("h1", [], [@luna.text(header_text)]),
+    table,
+  ])
 }
 

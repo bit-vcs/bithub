@@ -194,7 +194,7 @@ fn register_api_routes(app : @mars.Server, api : @core.ApiState) -> Unit {
           let ok = api.add_comment(issue_id, author, body, timestamp)
           let resp : Map[String, Json] = {}
           resp.set("ok", ok.to_json())
-          if not(ok) {
+          if !ok {
             resp.set("error", "issue not found".to_json())
           }
           ctx.json(resp.to_json())
@@ -465,6 +465,98 @@ fn register_api_routes(app : @mars.Server, api : @core.ApiState) -> Unit {
       guard require_write(api, ctx) is Some(_) else { return }
       let pr_id = ctx.param("id").unwrap_or("")
       let ok = api.close_pull_request(pr_id)
+      let resp : Map[String, Json] = {}
+      resp.set("ok", ok.to_json())
+      ctx.json(resp.to_json())
+    }),
+  )
+  // ---- PR Reviews ----
+  app.post(
+    "/api/pulls/:id/reviews",
+    @mars.handler(async fn(ctx) {
+      guard require_write(api, ctx) is Some(token_info) else { return }
+      let pr_id = ctx.param("id").unwrap_or("")
+      match ctx.body_json() {
+        Some(json) => {
+          guard json is Object(obj) else {
+            let e : Map[String, Json] = {}
+            e.set("error", "invalid payload".to_json())
+            return ctx.json(e.to_json(), status=400)
+          }
+          let state = match obj.get("state") {
+            Some(String(s)) => s
+            _ => {
+              let e : Map[String, Json] = {}
+              e.set("error", "missing state (approved/changes_requested/commented)".to_json())
+              return ctx.json(e.to_json(), status=400)
+            }
+          }
+          let body = match obj.get("body") {
+            Some(String(s)) => s
+            _ => ""
+          }
+          let author = match obj.get("author") {
+            Some(String(s)) => s
+            _ => token_info.identity
+          }
+          let timestamp = timestamp_or_now(
+            match obj.get("timestamp") {
+              Some(String(s)) => s
+              _ => ""
+            },
+          )
+          let id = api.submit_pr_review(pr_id, author, state, body, timestamp)
+          if id.length() == 0 {
+            let e : Map[String, Json] = {}
+            e.set("error", "PR not found".to_json())
+            return ctx.json(e.to_json(), status=404)
+          }
+          // Auto-generate notification
+          let pr_title = match api.get_pull_request(pr_id) {
+            Some(detail) => detail.pr.title
+            None => "PR #" + pr_id
+          }
+          let review_label = match state {
+            "approved" => "approved"
+            "changes_requested" => "requested changes on"
+            _ => "commented on"
+          }
+          api.add_notification(
+            "review",
+            author + " " + review_label + " PR #" + pr_id + " " + pr_title,
+            "/pulls/" + pr_id,
+            author,
+            timestamp,
+          ) |> ignore
+          let resp : Map[String, Json] = {}
+          resp.set("id", id.to_json())
+          ctx.json(resp.to_json())
+        }
+        None => {
+          let e : Map[String, Json] = {}
+          e.set("error", "invalid json".to_json())
+          ctx.json(e.to_json(), status=400)
+        }
+      }
+    }),
+  )
+  // ---- Notifications ----
+  app.post(
+    "/api/notifications/read",
+    @mars.handler(fn(ctx) {
+      guard require_write(api, ctx) is Some(_) else { return }
+      let count = api.mark_all_notifications_read()
+      let resp : Map[String, Json] = {}
+      resp.set("marked", count.to_json())
+      ctx.json(resp.to_json())
+    }),
+  )
+  app.post(
+    "/api/notifications/:id/read",
+    @mars.handler(fn(ctx) {
+      guard require_write(api, ctx) is Some(_) else { return }
+      let nid = ctx.param("id").unwrap_or("")
+      let ok = api.mark_notification_read(nid)
       let resp : Map[String, Json] = {}
       resp.set("ok", ok.to_json())
       ctx.json(resp.to_json())

@@ -1,4 +1,5 @@
 import {
+  "moonbitlang/core/string" @string,
   "bit-vcs/bithub/actrun" @actrun,
   "mizchi/bit" @bit,
   "mizchi/bit/lib" @bitlib,
@@ -7,5 +8,4 @@ import {
   "mizchi/bit/x/kv" @kv,
   "moonbitlang/core/encoding/utf8" @utf8,
   "moonbitlang/core/json" @json,
-  "moonbitlang/core/strconv" @strconv,
 }

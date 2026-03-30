@@ -1,8 +1,8 @@
 import {
+  "moonbitlang/core/string" @string,
   "bit-vcs/bithub/cmd/bithub" @bithub,
   "mizchi/js/builtins/date" @jdate,
   "mizchi/js/node/process" @nprocess,
-  "moonbitlang/core/strconv" @strconv,
 }
 
 options(

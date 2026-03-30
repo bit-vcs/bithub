@@ -1,8 +1,8 @@
 import {
+  "moonbitlang/core/string" @string,
   "bit-vcs/bithub/adapters/mars_http" @mars_http,
   "mizchi/js/node/process" @nprocess,
   "mizchi/sol" @sol,
-  "moonbitlang/core/strconv" @strconv,
 }
 
 options(

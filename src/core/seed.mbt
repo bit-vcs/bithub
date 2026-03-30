@@ -227,4 +227,38 @@ pub fn seed_files(kv : &Storage) -> Unit {
   kv.set_string("issues/2/milestone", "1")
   kv.set_string("milestones/2/issues/1", "assigned=true")
   kv.set_string("issues/1/milestone", "2")
+  // Seed: PR reviews
+  kv.set_string(
+    "prs/1/meta",
+    "title=feat: add relay webhook CI tracking\nstate=merged\nauthor=mizchi\nbase_ref=main\nhead_ref=feat/ci-webhook\ncreated_at=1773655000",
+  )
+  kv.set_string(
+    "prs/1/body",
+    "Adds CI run tracking via relay webhooks.\n\n## Changes\n- New webhook handler\n- CI status updates",
+  )
+  kv.set_string(
+    "prs/1/reviews/0",
+    "author=ci-bot\nstate=approved\nbody=LGTM! Tests pass.\ncreated_at=1773656000",
+  )
+  kv.set_string(
+    "prs/1/reviews/1",
+    "author=agent-alice\nstate=approved\nbody=Ship it.\ncreated_at=1773657000",
+  )
+  // Seed: notifications
+  kv.set_string(
+    "notifications/1",
+    "kind=pr\ntitle=mizchi opened PR #1 feat: add relay webhook CI tracking\ntarget_url=/pulls/1\nactor=mizchi\ncreated_at=1773655000\nread=true",
+  )
+  kv.set_string(
+    "notifications/2",
+    "kind=review\ntitle=ci-bot approved PR #1\ntarget_url=/pulls/1\nactor=ci-bot\ncreated_at=1773656000\nread=true",
+  )
+  kv.set_string(
+    "notifications/3",
+    "kind=issue\ntitle=mizchi opened issue #2: Support Cloudflare R2 as storage backend\ntarget_url=/issues/2\nactor=mizchi\ncreated_at=1773660000\nread=false",
+  )
+  kv.set_string(
+    "notifications/4",
+    "kind=release\ntitle=v0.1.1 released\ntarget_url=/releases/2\nactor=mizchi\ncreated_at=1773660000\nread=false",
+  )
 }

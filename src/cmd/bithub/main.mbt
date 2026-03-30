@@ -1,6 +1,6 @@
 ///|
 fn parse_port(raw : String) -> Int {
-  let parsed = @strconv.parse_int(raw) catch { _ => 8787 }
+  let parsed = @string.parse_int(raw) catch { _ => 8787 }
   if parsed > 0 {
     parsed
   } else {
@@ -488,11 +488,11 @@ pub fn parse_relay_nodes_from_poll(text : String) -> Array[RelayPeer] {
           continue
         }
         let kind = relay_payload_kind(payload)
-        if not(is_bithub_presence_kind(kind)) {
+        if !is_bithub_presence_kind(kind) {
           continue
         }
         let url = relay_payload_url(payload)
-        if not(is_http_url(url)) {
+        if !is_http_url(url) {
           continue
         }
         let name = relay_payload_name(payload, sender)
@@ -680,7 +680,7 @@ fn announce_relay_presence(
   viewer_url : String,
   name : String,
 ) -> Unit {
-  if not(is_http_url(viewer_url)) {
+  if !is_http_url(viewer_url) {
     return
   }
   relay_publish_presence_async(
@@ -740,7 +740,7 @@ fn start_p2p_tunnel(
   host : String,
   on_public_url : (String) -> Unit,
 ) -> @nchild.ChildProcess? {
-  if not(options.enable_p2p) {
+  if !options.enable_p2p {
     return None
   }
   let local_url = "http://\{host}:\{options.port}"
@@ -818,7 +818,7 @@ fn route_repo_response(state : RepoState, raw_url : String) -> PageResponse {
 
 ///|
 fn parse_catalog_repo_route(raw_url : String) -> (String, String)? {
-  if not(raw_url.has_prefix("/repo/")) {
+  if !raw_url.has_prefix("/repo/") {
     return None
   }
   let rest = String::unsafe_substring(raw_url, start=6, end=raw_url.length())

@@ -105,7 +105,7 @@ pub impl Storage for MapStorage with list(self, prefix) {
         Some(i) => String::unsafe_substring(rest, start=0, end=i)
         None => rest
       }
-      if not(seen.contains(name)) {
+      if !seen.contains(name) {
         seen.set(name, true)
         result.push(name)
       }
