@@ -74,43 +74,43 @@ agent-parallel:
 
 # Initialize VRT baselines (requires running server)
 vrt-init:
-  tsx vrt/src/vrt-cli.ts init
+  npx tsx vrt/src/vrt-cli.ts init
 
 # Capture current VRT snapshots
 vrt-capture:
-  tsx vrt/src/vrt-cli.ts capture
+  npx tsx vrt/src/vrt-cli.ts capture
 
 # Verify VRT snapshots against baselines
 vrt-verify:
-  tsx vrt/src/vrt-cli.ts verify
+  npx tsx vrt/src/vrt-cli.ts verify
 
 # Accept current snapshots as new baselines
 vrt-approve:
-  tsx vrt/src/vrt-cli.ts approve
+  npx tsx vrt/src/vrt-cli.ts approve
 
 # Show VRT report
 vrt-report:
-  tsx vrt/src/vrt-cli.ts report
+  npx tsx vrt/src/vrt-cli.ts report
 
 # Show affected components
 vrt-affected:
-  tsx vrt/src/vrt-cli.ts affected
+  npx tsx vrt/src/vrt-cli.ts affected
 
 # Generate spec.json from current state
 vrt-introspect:
-  tsx vrt/src/vrt-cli.ts introspect
+  npx tsx vrt/src/vrt-cli.ts introspect
 
 # Verify spec.json invariants
 vrt-spec-verify:
-  tsx vrt/src/vrt-cli.ts spec-verify
+  npx tsx vrt/src/vrt-cli.ts spec-verify
 
 # Auto-generate expectation.json from diff
 vrt-expect:
-  tsx vrt/src/vrt-cli.ts expect
+  npx tsx vrt/src/vrt-cli.ts expect
 
 # Run VRT demo (kitty graphics)
 vrt-demo:
-  tsx vrt/src/demo.ts
+  npx tsx vrt/src/demo.ts
 
 # Run VRT unit tests
 vrt-test:
