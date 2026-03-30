@@ -1,6 +1,6 @@
 # TODO
 
-Last updated: 2026-03-17
+Last updated: 2026-03-30
 
 ## Rules
 
@@ -65,7 +65,9 @@ Last updated: 2026-03-17
 
 - [ ] Enable Container orchestration in wrangler.toml
 - [ ] Notification via relay: publish events to bit-relay
-- [ ] Tags / releases page (tags implemented, releases not yet)
+- [x] Tags / releases page (done 2026-03-30, by agent)
+- [x] Labels for issues (done 2026-03-30, by agent)
+- [x] Milestones for issues (done 2026-03-30, by agent)
 - [ ] Activity graph: commit frequency visualization
 - [ ] Add E2E tests for relay node list (`/relay`)
 

@@ -73,6 +73,46 @@ pub fn mars_route_specs() -> Array[RouteSpec] {
       http_method: "POST",
       path: "/api/actions/runs/status",
     },
+    {
+      id: "releases",
+      http_method: "GET",
+      path: "/releases",
+    },
+    {
+      id: "release_detail",
+      http_method: "GET",
+      path: "/releases/:id",
+    },
+    {
+      id: "releases_create",
+      http_method: "POST",
+      path: "/api/releases",
+    },
+    {
+      id: "labels",
+      http_method: "GET",
+      path: "/labels",
+    },
+    {
+      id: "labels_create",
+      http_method: "POST",
+      path: "/api/labels",
+    },
+    {
+      id: "milestones",
+      http_method: "GET",
+      path: "/milestones",
+    },
+    {
+      id: "milestone_detail",
+      http_method: "GET",
+      path: "/milestones/:id",
+    },
+    {
+      id: "milestones_create",
+      http_method: "POST",
+      path: "/api/milestones",
+    },
   ]
 }
 

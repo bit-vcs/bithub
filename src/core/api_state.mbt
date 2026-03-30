@@ -1266,6 +1266,425 @@ fn count_files(store : &Storage, prefix : String) -> Int {
   count
 }
 
+// ---- Releases ----
+
+///|
+pub struct ReleaseEntry {
+  id : String
+  tag_name : String
+  name : String
+  body : String
+  author : String
+  created_at : String
+  draft : Bool
+  prerelease : Bool
+}
+
+///|
+pub fn ApiState::create_release(
+  self : ApiState,
+  tag_name : String,
+  name : String,
+  body : String,
+  author : String,
+  timestamp : String,
+  draft : Bool,
+  prerelease : Bool,
+) -> String {
+  let existing = self.store.list("releases")
+  let mut max_id = 0
+  for id_str in existing {
+    let n = parse_int_safe(id_str)
+    if n > max_id {
+      max_id = n
+    }
+  }
+  let new_id = (max_id + 1).to_string()
+  let meta = [
+    "tag_name=" + tag_name,
+    "name=" + name,
+    "author=" + author,
+    "created_at=" + timestamp,
+    "draft=" + draft.to_string(),
+    "prerelease=" + prerelease.to_string(),
+  ].join("\n")
+  self.store.set_string("releases/" + new_id + "/meta", meta)
+  if body.length() > 0 {
+    self.store.set_string("releases/" + new_id + "/body", body)
+  }
+  new_id
+}
+
+///|
+pub fn ApiState::list_releases(self : ApiState) -> Array[ReleaseEntry] {
+  let ids = self.store.list("releases")
+  let entries : Array[ReleaseEntry] = []
+  for id in ids {
+    match self.store.get("releases/" + id + "/meta") {
+      Some(bytes) => {
+        let fields = parse_kv_fields(@utf8.decode_lossy(bytes))
+        let body = match self.store.get("releases/" + id + "/body") {
+          Some(b) => @utf8.decode_lossy(b)
+          None => ""
+        }
+        entries.push({
+          id,
+          tag_name: fields.get("tag_name").unwrap_or(""),
+          name: fields.get("name").unwrap_or(""),
+          body,
+          author: fields.get("author").unwrap_or(""),
+          created_at: fields.get("created_at").unwrap_or(""),
+          draft: fields.get("draft").unwrap_or("false") == "true",
+          prerelease: fields.get("prerelease").unwrap_or("false") == "true",
+        })
+      }
+      None => ()
+    }
+  }
+  entries.sort_by(fn(a, b) { String::compare(b.created_at, a.created_at) })
+  entries
+}
+
+///|
+pub fn ApiState::get_release(self : ApiState, id : String) -> ReleaseEntry? {
+  match self.store.get("releases/" + id + "/meta") {
+    Some(bytes) => {
+      let fields = parse_kv_fields(@utf8.decode_lossy(bytes))
+      let body = match self.store.get("releases/" + id + "/body") {
+        Some(b) => @utf8.decode_lossy(b)
+        None => ""
+      }
+      Some({
+        id,
+        tag_name: fields.get("tag_name").unwrap_or(""),
+        name: fields.get("name").unwrap_or(""),
+        body,
+        author: fields.get("author").unwrap_or(""),
+        created_at: fields.get("created_at").unwrap_or(""),
+        draft: fields.get("draft").unwrap_or("false") == "true",
+        prerelease: fields.get("prerelease").unwrap_or("false") == "true",
+      })
+    }
+    None => None
+  }
+}
+
+///|
+pub fn ApiState::delete_release(self : ApiState, id : String) -> Bool {
+  if self.store.get("releases/" + id + "/meta") is None {
+    return false
+  }
+  // Overwrite meta with empty to effectively delete
+  self.store.set_string("releases/" + id + "/meta", "deleted=true")
+  true
+}
+
+// ---- Labels ----
+
+///|
+pub struct LabelEntry {
+  name : String
+  color : String
+  description : String
+}
+
+///|
+pub fn ApiState::create_label(
+  self : ApiState,
+  name : String,
+  color : String,
+  description : String,
+) -> Bool {
+  let meta = [
+    "color=" + color,
+    "description=" + description,
+  ].join("\n")
+  self.store.set_string("labels/" + name, meta)
+  true
+}
+
+///|
+pub fn ApiState::list_labels(self : ApiState) -> Array[LabelEntry] {
+  let names = self.store.list("labels")
+  let entries : Array[LabelEntry] = []
+  for name in names {
+    match self.store.get("labels/" + name) {
+      Some(bytes) => {
+        let fields = parse_kv_fields(@utf8.decode_lossy(bytes))
+        entries.push({
+          name,
+          color: fields.get("color").unwrap_or("cccccc"),
+          description: fields.get("description").unwrap_or(""),
+        })
+      }
+      None => ()
+    }
+  }
+  entries.sort_by(fn(a, b) { String::compare(a.name, b.name) })
+  entries
+}
+
+///|
+pub fn ApiState::get_label(self : ApiState, name : String) -> LabelEntry? {
+  match self.store.get("labels/" + name) {
+    Some(bytes) => {
+      let fields = parse_kv_fields(@utf8.decode_lossy(bytes))
+      Some({
+        name,
+        color: fields.get("color").unwrap_or("cccccc"),
+        description: fields.get("description").unwrap_or(""),
+      })
+    }
+    None => None
+  }
+}
+
+///|
+pub fn ApiState::add_issue_label(
+  self : ApiState,
+  issue_id : String,
+  label_name : String,
+) -> Bool {
+  if self.store.get("issues/" + issue_id + "/meta") is None {
+    return false
+  }
+  // Store label assignment as a key
+  self.store.set_string(
+    "issues/" + issue_id + "/labels/" + label_name,
+    "assigned=true",
+  )
+  true
+}
+
+///|
+pub fn ApiState::remove_issue_label(
+  self : ApiState,
+  issue_id : String,
+  label_name : String,
+) -> Bool {
+  if self.store.get("issues/" + issue_id + "/labels/" + label_name) is None {
+    return false
+  }
+  self.store.set_string(
+    "issues/" + issue_id + "/labels/" + label_name,
+    "assigned=false",
+  )
+  true
+}
+
+///|
+pub fn ApiState::list_issue_labels(
+  self : ApiState,
+  issue_id : String,
+) -> Array[LabelEntry] {
+  let names = self.store.list("issues/" + issue_id + "/labels")
+  let entries : Array[LabelEntry] = []
+  for name in names {
+    // Check if still assigned
+    match self.store.get("issues/" + issue_id + "/labels/" + name) {
+      Some(bytes) => {
+        let text = @utf8.decode_lossy(bytes)
+        if string_contains(text, "assigned=false") {
+          continue
+        }
+        // Get full label info
+        match self.get_label(name) {
+          Some(label) => entries.push(label)
+          None =>
+            entries.push({ name, color: "cccccc", description: "" })
+        }
+      }
+      None => ()
+    }
+  }
+  entries
+}
+
+// ---- Milestones ----
+
+///|
+pub struct MilestoneEntry {
+  id : String
+  title : String
+  description : String
+  state : String // "open" or "closed"
+  due_date : String
+  created_at : String
+}
+
+///|
+pub struct MilestoneDetail {
+  milestone : MilestoneEntry
+  open_issues : Int
+  closed_issues : Int
+}
+
+///|
+pub fn ApiState::create_milestone(
+  self : ApiState,
+  title : String,
+  description : String,
+  due_date : String,
+  timestamp : String,
+) -> String {
+  let existing = self.store.list("milestones")
+  let mut max_id = 0
+  for id_str in existing {
+    let n = parse_int_safe(id_str)
+    if n > max_id {
+      max_id = n
+    }
+  }
+  let new_id = (max_id + 1).to_string()
+  let meta = [
+    "title=" + title,
+    "description=" + description,
+    "state=open",
+    "due_date=" + due_date,
+    "created_at=" + timestamp,
+  ].join("\n")
+  self.store.set_string("milestones/" + new_id + "/meta", meta)
+  new_id
+}
+
+///|
+pub fn ApiState::list_milestones(self : ApiState) -> Array[MilestoneEntry] {
+  let ids = self.store.list("milestones")
+  let entries : Array[MilestoneEntry] = []
+  for id in ids {
+    match self.store.get("milestones/" + id + "/meta") {
+      Some(bytes) => {
+        let fields = parse_kv_fields(@utf8.decode_lossy(bytes))
+        entries.push({
+          id,
+          title: fields.get("title").unwrap_or(""),
+          description: fields.get("description").unwrap_or(""),
+          state: fields.get("state").unwrap_or("open"),
+          due_date: fields.get("due_date").unwrap_or(""),
+          created_at: fields.get("created_at").unwrap_or(""),
+        })
+      }
+      None => ()
+    }
+  }
+  entries.sort_by(fn(a, b) { String::compare(b.created_at, a.created_at) })
+  entries
+}
+
+///|
+pub fn ApiState::get_milestone(
+  self : ApiState,
+  id : String,
+) -> MilestoneDetail? {
+  match self.store.get("milestones/" + id + "/meta") {
+    Some(bytes) => {
+      let fields = parse_kv_fields(@utf8.decode_lossy(bytes))
+      let milestone : MilestoneEntry = {
+        id,
+        title: fields.get("title").unwrap_or(""),
+        description: fields.get("description").unwrap_or(""),
+        state: fields.get("state").unwrap_or("open"),
+        due_date: fields.get("due_date").unwrap_or(""),
+        created_at: fields.get("created_at").unwrap_or(""),
+      }
+      // Count open/closed issues in this milestone
+      let mut open_issues = 0
+      let mut closed_issues = 0
+      let issue_ids = self.store.list("milestones/" + id + "/issues")
+      for iid in issue_ids {
+        match self.store.get("issues/" + iid + "/meta") {
+          Some(ibytes) => {
+            let ifields = parse_kv_fields(@utf8.decode_lossy(ibytes))
+            if ifields.get("state").unwrap_or("open") == "closed" {
+              closed_issues += 1
+            } else {
+              open_issues += 1
+            }
+          }
+          None => ()
+        }
+      }
+      Some({ milestone, open_issues, closed_issues })
+    }
+    None => None
+  }
+}
+
+///|
+pub fn ApiState::update_milestone_state(
+  self : ApiState,
+  id : String,
+  new_state : String,
+) -> Bool {
+  match self.store.get("milestones/" + id + "/meta") {
+    Some(bytes) => {
+      let fields = parse_kv_fields(@utf8.decode_lossy(bytes))
+      let meta = [
+        "title=" + fields.get("title").unwrap_or(""),
+        "description=" + fields.get("description").unwrap_or(""),
+        "state=" + new_state,
+        "due_date=" + fields.get("due_date").unwrap_or(""),
+        "created_at=" + fields.get("created_at").unwrap_or(""),
+      ].join("\n")
+      self.store.set_string("milestones/" + id + "/meta", meta)
+      true
+    }
+    None => false
+  }
+}
+
+///|
+pub fn ApiState::assign_issue_milestone(
+  self : ApiState,
+  issue_id : String,
+  milestone_id : String,
+) -> Bool {
+  if self.store.get("issues/" + issue_id + "/meta") is None {
+    return false
+  }
+  if self.store.get("milestones/" + milestone_id + "/meta") is None {
+    return false
+  }
+  // Store assignment on milestone side
+  self.store.set_string(
+    "milestones/" + milestone_id + "/issues/" + issue_id,
+    "assigned=true",
+  )
+  // Store milestone reference on issue side
+  self.store.set_string(
+    "issues/" + issue_id + "/milestone",
+    milestone_id,
+  )
+  true
+}
+
+///|
+pub fn ApiState::get_issue_milestone(
+  self : ApiState,
+  issue_id : String,
+) -> MilestoneEntry? {
+  match self.store.get("issues/" + issue_id + "/milestone") {
+    Some(bytes) => {
+      let mid = @utf8.decode_lossy(bytes)
+      match self.store.get("milestones/" + mid + "/meta") {
+        Some(mbytes) => {
+          let fields = parse_kv_fields(@utf8.decode_lossy(mbytes))
+          Some({
+            id: mid,
+            title: fields.get("title").unwrap_or(""),
+            description: fields.get("description").unwrap_or(""),
+            state: fields.get("state").unwrap_or("open"),
+            due_date: fields.get("due_date").unwrap_or(""),
+            created_at: fields.get("created_at").unwrap_or(""),
+          })
+        }
+        None => None
+      }
+    }
+    None => None
+  }
+}
+
 // ---- PR Review Comments ----
 
 ///|

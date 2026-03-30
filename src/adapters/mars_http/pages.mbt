@@ -753,6 +753,44 @@ fn render_issue_detail_page(
           ),
         ]),
       ]
+      // Show labels
+      let labels = api.list_issue_labels(id)
+      if labels.length() > 0 {
+        let label_nodes : Array[@luna.Node[Unit, String]] = []
+        for label in labels {
+          label_nodes.push(
+            @luna.h(
+              "span",
+              [
+                (
+                  "style",
+                  @luna.attr_static(
+                    "display:inline-block;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600;background:#" +
+                    label.color +
+                    ";color:#fff;margin-right:4px;",
+                  ),
+                ),
+              ],
+              [@luna.text(label.name)],
+            ),
+          )
+        }
+        content.push(@luna.h("p", [], label_nodes))
+      }
+      // Show milestone
+      match api.get_issue_milestone(id) {
+        Some(ms) =>
+          content.push(
+            @luna.h("p", [], [
+              @luna.text("Milestone: "),
+              @components.link(
+                "/milestones/" + ms.id,
+                [@luna.text(ms.title)],
+              ),
+            ]),
+          )
+        None => ()
+      }
       if detail.issue.body.length() > 0 {
         content.push(
           @components.region(
@@ -1246,6 +1284,310 @@ fn render_ci_run_detail_page(
       html: render_layout("CI Run", [
         @luna.h("h1", [], [@luna.text("CI Run: " + run_id)]),
         @luna.h("p", [], [@luna.text("run not found")]),
+      ]),
+    }
+  }
+}
+
+// ---- Releases Pages ----
+
+///|
+fn render_releases_page(api : @core.ApiState) -> String {
+  let releases = api.list_releases()
+  let rows : Array[@luna.Node[Unit, String]] = []
+  for rel in releases {
+    let badge = if rel.draft {
+      "draft"
+    } else if rel.prerelease {
+      "pre-release"
+    } else {
+      "latest"
+    }
+    rows.push(
+      @luna.h("tr", [], [
+        @luna.h("td", [], [
+          @components.link(
+            "/releases/" + rel.id,
+            [@luna.text(rel.name)],
+          ),
+        ]),
+        @luna.h("td", [], [@luna.text(rel.tag_name)]),
+        @luna.h("td", [], [@luna.text(badge)]),
+        @luna.h("td", [], [@luna.text(rel.author)]),
+        @luna.h("td", [], [@luna.text(format_timestamp(rel.created_at))]),
+      ]),
+    )
+  }
+  if rows.length() == 0 {
+    rows.push(
+      @luna.h("tr", [], [
+        @luna.h("td", [("colspan", @luna.attr_static("5"))], [
+          @luna.text("No releases"),
+        ]),
+      ]),
+    )
+  }
+  let table = @luna.h("table", [("class", @luna.attr_static("wf-table"))], [
+    @luna.h("thead", [], [
+      @luna.h("tr", [], [
+        @luna.h("th", [], [@luna.text("Release")]),
+        @luna.h("th", [], [@luna.text("Tag")]),
+        @luna.h("th", [], [@luna.text("Type")]),
+        @luna.h("th", [], [@luna.text("Author")]),
+        @luna.h("th", [], [@luna.text("Date")]),
+      ]),
+    ]),
+    @luna.h("tbody", [], rows),
+  ])
+  render_layout("Releases", [
+    @luna.h("h1", [], [@luna.text("Releases")]),
+    table,
+  ])
+}
+
+///|
+fn render_release_detail_page(
+  api : @core.ApiState,
+  id : String,
+) -> PageHtml {
+  match api.get_release(id) {
+    Some(rel) => {
+      let badge = if rel.draft {
+        "Draft"
+      } else if rel.prerelease {
+        "Pre-release"
+      } else {
+        "Latest"
+      }
+      let content : Array[@luna.Node[Unit, String]] = [
+        @luna.h("h1", [], [@luna.text(rel.name)]),
+        @luna.h("p", [], [
+          @luna.text(
+            "tag: " +
+            rel.tag_name +
+            " | " +
+            badge +
+            " | by " +
+            rel.author +
+            " | " +
+            format_timestamp(rel.created_at),
+          ),
+        ]),
+      ]
+      if rel.body.length() > 0 {
+        content.push(
+          @components.region(
+            aria_label="release notes",
+            [@luna.raw_html(@markdown.md_to_html(rel.body))],
+          ),
+        )
+      }
+      { status: 200, html: render_layout(rel.name, content) }
+    }
+    None => {
+      status: 404,
+      html: render_layout("Release", [
+        @luna.h("h1", [], [@luna.text("Release #" + id)]),
+        @luna.h("p", [], [@luna.text("release not found")]),
+      ]),
+    }
+  }
+}
+
+// ---- Labels Page ----
+
+///|
+fn render_labels_page(api : @core.ApiState) -> String {
+  let labels = api.list_labels()
+  let rows : Array[@luna.Node[Unit, String]] = []
+  for label in labels {
+    rows.push(
+      @luna.h("tr", [], [
+        @luna.h("td", [], [
+          @luna.h(
+            "span",
+            [
+              (
+                "style",
+                @luna.attr_static(
+                  "display:inline-block;padding:2px 8px;border-radius:12px;font-size:12px;font-weight:600;background:#" +
+                  label.color +
+                  ";color:#fff;",
+                ),
+              ),
+            ],
+            [@luna.text(label.name)],
+          ),
+        ]),
+        @luna.h("td", [], [@luna.text("#" + label.color)]),
+        @luna.h("td", [], [@luna.text(label.description)]),
+      ]),
+    )
+  }
+  if rows.length() == 0 {
+    rows.push(
+      @luna.h("tr", [], [
+        @luna.h("td", [("colspan", @luna.attr_static("3"))], [
+          @luna.text("No labels"),
+        ]),
+      ]),
+    )
+  }
+  let table = @luna.h("table", [("class", @luna.attr_static("wf-table"))], [
+    @luna.h("thead", [], [
+      @luna.h("tr", [], [
+        @luna.h("th", [], [@luna.text("Label")]),
+        @luna.h("th", [], [@luna.text("Color")]),
+        @luna.h("th", [], [@luna.text("Description")]),
+      ]),
+    ]),
+    @luna.h("tbody", [], rows),
+  ])
+  render_layout("Labels", [
+    @luna.h("h1", [], [@luna.text("Labels")]),
+    table,
+  ])
+}
+
+// ---- Milestones Pages ----
+
+///|
+fn render_milestones_page(api : @core.ApiState) -> String {
+  let milestones = api.list_milestones()
+  let rows : Array[@luna.Node[Unit, String]] = []
+  for ms in milestones {
+    let state_icon = if ms.state == "open" { "🟢" } else { "🟣" }
+    let due = if ms.due_date.length() > 0 {
+      format_timestamp(ms.due_date)
+    } else {
+      "no due date"
+    }
+    rows.push(
+      @luna.h("tr", [], [
+        @luna.h("td", [], [
+          @components.link(
+            "/milestones/" + ms.id,
+            [@luna.text(ms.title)],
+          ),
+        ]),
+        @luna.h("td", [], [@luna.text(state_icon + " " + ms.state)]),
+        @luna.h("td", [], [@luna.text(due)]),
+        @luna.h("td", [], [@luna.text(format_timestamp(ms.created_at))]),
+      ]),
+    )
+  }
+  if rows.length() == 0 {
+    rows.push(
+      @luna.h("tr", [], [
+        @luna.h("td", [("colspan", @luna.attr_static("4"))], [
+          @luna.text("No milestones"),
+        ]),
+      ]),
+    )
+  }
+  let table = @luna.h("table", [("class", @luna.attr_static("wf-table"))], [
+    @luna.h("thead", [], [
+      @luna.h("tr", [], [
+        @luna.h("th", [], [@luna.text("Milestone")]),
+        @luna.h("th", [], [@luna.text("State")]),
+        @luna.h("th", [], [@luna.text("Due Date")]),
+        @luna.h("th", [], [@luna.text("Created")]),
+      ]),
+    ]),
+    @luna.h("tbody", [], rows),
+  ])
+  render_layout("Milestones", [
+    @luna.h("h1", [], [@luna.text("Milestones")]),
+    table,
+  ])
+}
+
+///|
+fn render_milestone_detail_page(
+  api : @core.ApiState,
+  id : String,
+) -> PageHtml {
+  match api.get_milestone(id) {
+    Some(detail) => {
+      let ms = detail.milestone
+      let total = detail.open_issues + detail.closed_issues
+      let progress = if total > 0 {
+        (detail.closed_issues * 100 / total).to_string() + "%"
+      } else {
+        "0%"
+      }
+      let due = if ms.due_date.length() > 0 {
+        format_timestamp(ms.due_date)
+      } else {
+        "no due date"
+      }
+      let content : Array[@luna.Node[Unit, String]] = [
+        @luna.h("h1", [], [@luna.text(ms.title)]),
+        @luna.h("p", [], [
+          @luna.text(
+            "state: " +
+            ms.state +
+            " | due: " +
+            due +
+            " | created: " +
+            format_timestamp(ms.created_at),
+          ),
+        ]),
+        @luna.h("p", [], [
+          @luna.text(
+            "Progress: " +
+            progress +
+            " (" +
+            detail.closed_issues.to_string() +
+            " closed, " +
+            detail.open_issues.to_string() +
+            " open)",
+          ),
+        ]),
+      ]
+      // Progress bar
+      content.push(
+        @luna.h(
+          "div",
+          [
+            (
+              "style",
+              @luna.attr_static(
+                "width:100%;height:10px;background:var(--border);border-radius:5px;overflow:hidden;margin:8px 0;",
+              ),
+            ),
+          ],
+          [
+            @luna.h(
+              "div",
+              [
+                (
+                  "style",
+                  @luna.attr_static(
+                    "width:" + progress + ";height:100%;background:#3fb950;",
+                  ),
+                ),
+              ],
+              [],
+            ),
+          ],
+        ),
+      )
+      if ms.description.length() > 0 {
+        content.push(
+          @components.region(
+            aria_label="milestone description",
+            [@luna.raw_html(@markdown.md_to_html(ms.description))],
+          ),
+        )
+      }
+      { status: 200, html: render_layout(ms.title, content) }
+    }
+    None => {
+      status: 404,
+      html: render_layout("Milestone", [
+        @luna.h("h1", [], [@luna.text("Milestone #" + id)]),
+        @luna.h("p", [], [@luna.text("milestone not found")]),
       ]),
     }
   }

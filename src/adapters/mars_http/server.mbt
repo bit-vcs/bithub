@@ -232,6 +232,33 @@ fn dispatch_route(
   if route == "/actions" {
     return ctx.html(render_ci_page(api), status=200)
   }
+  if route == "/releases" {
+    return ctx.html(render_releases_page(api), status=200)
+  }
+  if route.has_prefix("/releases/") {
+    let id = String::unsafe_substring(
+      route,
+      start="/releases/".length(),
+      end=route.length(),
+    )
+    let page = render_release_detail_page(api, id)
+    return ctx.html(page.html, status=page.status)
+  }
+  if route == "/labels" {
+    return ctx.html(render_labels_page(api), status=200)
+  }
+  if route == "/milestones" {
+    return ctx.html(render_milestones_page(api), status=200)
+  }
+  if route.has_prefix("/milestones/") {
+    let id = String::unsafe_substring(
+      route,
+      start="/milestones/".length(),
+      end=route.length(),
+    )
+    let page = render_milestone_detail_page(api, id)
+    return ctx.html(page.html, status=page.status)
+  }
   ctx.text("Not Found", status=404)
 }
 

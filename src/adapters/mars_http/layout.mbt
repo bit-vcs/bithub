@@ -30,6 +30,12 @@ fn render_layout(
     @components.link("/search?q=", [@luna.text("search")]),
     @luna.text(" | "),
     @components.link("/actions", [@luna.text("actions")]),
+    @luna.text(" | "),
+    @components.link("/releases", [@luna.text("releases")]),
+    @luna.text(" | "),
+    @components.link("/milestones", [@luna.text("milestones")]),
+    @luna.text(" | "),
+    @components.link("/labels", [@luna.text("labels")]),
   ]
   let page = @luna.fragment([
     @components.banner([

@@ -185,4 +185,46 @@ pub fn seed_files(kv : &Storage) -> Unit {
     "git/diffs/bbb2345/0",
     "path=src/cmd/bithub/viewer.mbt\nkind=modified\npatch=-layout.style.setProperty('--sidebar-size', `${current}px`);\n+layout.style.setProperty('--sidebar-size', current + 'px');",
   )
+  // Seed: releases
+  kv.set_string(
+    "releases/1/meta",
+    "tag_name=v0.1.0\nname=v0.1.0 - Initial Release\nauthor=mizchi\ncreated_at=1773640000\ndraft=false\nprerelease=false",
+  )
+  kv.set_string(
+    "releases/1/body",
+    "## What's New\n\n- Initial project setup\n- File browser, commits, branches\n- Basic issue tracking\n- CI/Actions workflow parser\n\n## Contributors\n\n- @mizchi",
+  )
+  kv.set_string(
+    "releases/2/meta",
+    "tag_name=v0.1.1\nname=v0.1.1 - Bug Fixes\nauthor=mizchi\ncreated_at=1773660000\ndraft=false\nprerelease=false",
+  )
+  kv.set_string(
+    "releases/2/body",
+    "## Bug Fixes\n\n- Fixed template literal escape in split resizer\n- CI improvements and webhook E2E tests\n- Updated dependencies",
+  )
+  // Seed: labels
+  kv.set_string("labels/bug", "color=d73a4a\ndescription=Something isn't working")
+  kv.set_string("labels/enhancement", "color=a2eeef\ndescription=New feature or request")
+  kv.set_string("labels/documentation", "color=0075ca\ndescription=Improvements or additions to documentation")
+  kv.set_string("labels/good first issue", "color=7057ff\ndescription=Good for newcomers")
+  kv.set_string("labels/help wanted", "color=008672\ndescription=Extra attention is needed")
+  kv.set_string("labels/wontfix", "color=ffffff\ndescription=This will not be worked on")
+  // Seed: issue labels
+  kv.set_string("issues/1/labels/bug", "assigned=true")
+  kv.set_string("issues/2/labels/enhancement", "assigned=true")
+  kv.set_string("issues/2/labels/help wanted", "assigned=true")
+  // Seed: milestones
+  kv.set_string(
+    "milestones/1/meta",
+    "title=v0.2.0\ndescription=Core GitHub-compatible features\nstate=open\ndue_date=1775000000\ncreated_at=1773640000",
+  )
+  kv.set_string(
+    "milestones/2/meta",
+    "title=v0.1.0\ndescription=Initial public release\nstate=closed\ndue_date=1773640000\ncreated_at=1773000000",
+  )
+  // Seed: milestone-issue assignments
+  kv.set_string("milestones/1/issues/2", "assigned=true")
+  kv.set_string("issues/2/milestone", "1")
+  kv.set_string("milestones/2/issues/1", "assigned=true")
+  kv.set_string("issues/1/milestone", "2")
 }
