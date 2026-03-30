@@ -277,11 +277,24 @@ fn render_workspace_spa(ws : String) -> String {
     #|  const ta=document.getElementById('editor');
     #|  ta.addEventListener('keydown',e=>{if(e.key==='Tab'){e.preventDefault();const s=ta.selectionStart,end=ta.selectionEnd;ta.value=ta.value.substring(0,s)+'  '+ta.value.substring(end);ta.selectionStart=ta.selectionEnd=s+2;}});
     #|}
+    #|function simpleHash(s){let h=0;for(let i=0;i<s.length;i++){h=((h<<5)-h+s.charCodeAt(i))|0;}return (h>>>0).toString(16).padStart(8,'0');}
     #|async function saveEdit(){
     #|  const ta=document.getElementById('editor');
     #|  if(!ta)return;
     #|  await idbPut(KEY_PFX+_editPath,ta.value);
-    #|  navigate(subPath(),false);
+    #|  await promptCommit(_editPath);
+    #|}
+    #|async function promptCommit(path){
+    #|  const msg=prompt('Commit message:','Edit '+path);
+    #|  if(!msg){navigate(subPath(),false);return;}
+    #|  const sha=simpleHash(msg+Date.now()+Math.random());
+    #|  const headSha=await idbGet('ws:'+WS_ID+':HEAD')||'';
+    #|  const commit={sha,message:msg,author:'anonymous',date:new Date().toISOString(),parent:headSha,files:[{path,action:'modify'}]};
+    #|  await idbPut('ws:'+WS_ID+':commit:'+sha,JSON.stringify(commit));
+    #|  await idbPut('ws:'+WS_ID+':HEAD',sha);
+    #|  const c=document.getElementById('spa-content');
+    #|  c.innerHTML='<div class="commit-ok" style="padding:16px;background:var(--pre);border:1px solid var(--border);border-radius:6px;margin:12px 0;"><strong>Committed</strong> <code>'+esc(sha.slice(0,8))+'</code> — '+esc(msg)+'</div>';
+    #|  setTimeout(()=>navigate(subPath(),false),1500);
     #|}
     #|
     #|// --- Commits ---
