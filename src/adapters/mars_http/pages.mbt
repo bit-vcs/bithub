@@ -1593,3 +1593,405 @@ fn render_milestone_detail_page(
   }
 }
 
+// ---- Activity Graph Page ----
+
+///|
+fn render_activity_graph_page(api : @core.ApiState) -> String {
+  let activity = api.commit_activity()
+  let weekday_dist = api.commit_weekday_distribution()
+  let hour_dist = api.commit_hour_distribution()
+  let commits = api.list_commits()
+  // Build date→count map for heatmap lookup
+  let date_counts : Map[String, Int] = {}
+  let mut max_count = 0
+  for entry in activity {
+    date_counts.set(entry.date, entry.count)
+    if entry.count > max_count {
+      max_count = entry.count
+    }
+  }
+  // Generate SVG heatmap (52 weeks × 7 days, GitHub-style)
+  // We render the most recent 52 weeks ending today-ish.
+  // Use the latest commit date as reference if available, otherwise show empty.
+  let ref_date = if commits.length() > 0 {
+    commits[0].timestamp
+  } else {
+    ""
+  }
+  let svg = build_heatmap_svg(date_counts, max_count, ref_date)
+  // Weekday bar chart
+  let weekday_names = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+  let mut wd_max = 1
+  for v in weekday_dist {
+    if v > wd_max {
+      wd_max = v
+    }
+  }
+  let wd_bars : Array[@luna.Node[Unit, String]] = []
+  for i = 0; i < 7; i = i + 1 {
+    let pct = weekday_dist[i] * 100 / wd_max
+    wd_bars.push(
+      @luna.h(
+        "div",
+        [
+          (
+            "style",
+            @luna.attr_static(
+              "display:flex;align-items:center;gap:8px;margin:2px 0;",
+            ),
+          ),
+        ],
+        [
+          @luna.h(
+            "span",
+            [
+              (
+                "style",
+                @luna.attr_static("width:30px;font-size:12px;text-align:right;"),
+              ),
+            ],
+            [@luna.text(weekday_names[i])],
+          ),
+          @luna.h(
+            "div",
+            [
+              (
+                "style",
+                @luna.attr_static(
+                  "height:14px;background:#3fb950;border-radius:2px;width:" +
+                  pct.to_string() +
+                  "%;min-width:2px;",
+                ),
+              ),
+            ],
+            [],
+          ),
+          @luna.h(
+            "span",
+            [("style", @luna.attr_static("font-size:12px;color:var(--text);"))],
+            [@luna.text(weekday_dist[i].to_string())],
+          ),
+        ],
+      ),
+    )
+  }
+  // Hour bar chart
+  let mut hr_max = 1
+  for v in hour_dist {
+    if v > hr_max {
+      hr_max = v
+    }
+  }
+  let hr_bars : Array[@luna.Node[Unit, String]] = []
+  for i = 0; i < 24; i = i + 1 {
+    let pct = hour_dist[i] * 100 / hr_max
+    let label = if i < 10 {
+      "0" + i.to_string()
+    } else {
+      i.to_string()
+    }
+    hr_bars.push(
+      @luna.h(
+        "div",
+        [
+          (
+            "style",
+            @luna.attr_static(
+              "display:flex;align-items:center;gap:8px;margin:1px 0;",
+            ),
+          ),
+        ],
+        [
+          @luna.h(
+            "span",
+            [
+              (
+                "style",
+                @luna.attr_static(
+                  "width:24px;font-size:11px;text-align:right;font-family:monospace;",
+                ),
+              ),
+            ],
+            [@luna.text(label)],
+          ),
+          @luna.h(
+            "div",
+            [
+              (
+                "style",
+                @luna.attr_static(
+                  "height:12px;background:#1f6feb;border-radius:2px;width:" +
+                  pct.to_string() +
+                  "%;min-width:1px;",
+                ),
+              ),
+            ],
+            [],
+          ),
+          @luna.h(
+            "span",
+            [("style", @luna.attr_static("font-size:11px;color:var(--text);"))],
+            [@luna.text(if hour_dist[i] > 0 { hour_dist[i].to_string() } else { "" })],
+          ),
+        ],
+      ),
+    )
+  }
+  let total_commits = commits.length()
+  let total_days = activity.length()
+  let content : Array[@luna.Node[Unit, String]] = [
+    @luna.h("h1", [], [@luna.text("Activity Graph")]),
+    @luna.h("p", [], [
+      @luna.text(
+        total_commits.to_string() +
+        " commits across " +
+        total_days.to_string() +
+        " active days",
+      ),
+    ]),
+    @luna.h("h2", [], [@luna.text("Contribution Heatmap")]),
+    @luna.h(
+      "div",
+      [("style", @luna.attr_static("overflow-x:auto;padding:8px 0;"))],
+      [@luna.raw_html(svg)],
+    ),
+    @luna.h(
+      "div",
+      [
+        (
+          "style",
+          @luna.attr_static(
+            "display:flex;gap:32px;flex-wrap:wrap;margin-top:24px;",
+          ),
+        ),
+      ],
+      [
+        @luna.h(
+          "div",
+          [("style", @luna.attr_static("flex:1;min-width:200px;"))],
+          [
+            @luna.h("h2", [], [@luna.text("Commits by Day of Week")]),
+            @luna.h("div", [], wd_bars),
+          ],
+        ),
+        @luna.h(
+          "div",
+          [("style", @luna.attr_static("flex:1;min-width:200px;"))],
+          [
+            @luna.h("h2", [], [@luna.text("Commits by Hour (UTC)")]),
+            @luna.h("div", [], hr_bars),
+          ],
+        ),
+      ],
+    ),
+  ]
+  render_layout("Activity Graph", content)
+}
+
+///|
+fn build_heatmap_svg(
+  date_counts : Map[String, Int],
+  max_count : Int,
+  ref_timestamp : String,
+) -> String {
+  // Parse reference epoch to find the end date
+  let mut ref_epoch = 0L
+  for c in ref_timestamp {
+    if c >= '0' && c <= '9' {
+      ref_epoch = ref_epoch * 10L + (c.to_int() - '0'.to_int()).to_int64()
+    }
+  }
+  if ref_epoch == 0L {
+    return "<p>No commit data available for heatmap.</p>"
+  }
+  let secs_per_day = 86400L
+  // End at end of reference day's week (Saturday)
+  let ref_weekday = ((ref_epoch / secs_per_day + 4L) % 7L).to_int()
+  // Days until Saturday
+  let days_to_sat = (6 - ref_weekday).to_int64()
+  let end_epoch = (ref_epoch / secs_per_day + days_to_sat) * secs_per_day
+  // Go back 52 weeks (364 days) to start on a Sunday
+  let start_epoch = end_epoch - 363L * secs_per_day
+  let cell_size = 13
+  let cell_gap = 3
+  let left_pad = 32
+  let top_pad = 20
+  let total_weeks = 52
+  let width = left_pad + total_weeks * (cell_size + cell_gap) + 10
+  let height = top_pad + 7 * (cell_size + cell_gap) + 10
+  let sb = StringBuilder::new()
+  sb.write_string(
+    "<svg width=\"" +
+    width.to_string() +
+    "\" height=\"" +
+    height.to_string() +
+    "\" xmlns=\"http://www.w3.org/2000/svg\">",
+  )
+  // Month labels
+  let month_names = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct",
+    "Nov", "Dec",
+  ]
+  let mut last_month = -1
+  for week = 0; week < total_weeks; week = week + 1 {
+    let day_epoch = start_epoch + (week * 7).to_int64() * secs_per_day
+    let date_str = epoch_to_date_from_epoch(day_epoch)
+    let month = parse_month_from_date(date_str)
+    if month != last_month && month >= 0 {
+      let x = left_pad + week * (cell_size + cell_gap)
+      sb.write_string(
+        "<text x=\"" +
+        x.to_string() +
+        "\" y=\"12\" font-size=\"10\" fill=\"currentColor\">" +
+        month_names[month] +
+        "</text>",
+      )
+      last_month = month
+    }
+  }
+  // Day labels (Mon, Wed, Fri)
+  let day_labels = ["", "Mon", "", "Wed", "", "Fri", ""]
+  for d = 0; d < 7; d = d + 1 {
+    if day_labels[d].length() > 0 {
+      let y = top_pad + d * (cell_size + cell_gap) + 10
+      sb.write_string(
+        "<text x=\"0\" y=\"" +
+        y.to_string() +
+        "\" font-size=\"10\" fill=\"currentColor\">" +
+        day_labels[d] +
+        "</text>",
+      )
+    }
+  }
+  // Cells
+  for week = 0; week < total_weeks; week = week + 1 {
+    for day = 0; day < 7; day = day + 1 {
+      let day_offset = (week * 7 + day).to_int64()
+      let day_epoch = start_epoch + day_offset * secs_per_day
+      let date_str = epoch_to_date_from_epoch(day_epoch)
+      let count = date_counts.get(date_str).unwrap_or(0)
+      let color = heatmap_color(count, max_count)
+      let x = left_pad + week * (cell_size + cell_gap)
+      let y = top_pad + day * (cell_size + cell_gap)
+      sb.write_string(
+        "<rect x=\"" +
+        x.to_string() +
+        "\" y=\"" +
+        y.to_string() +
+        "\" width=\"" +
+        cell_size.to_string() +
+        "\" height=\"" +
+        cell_size.to_string() +
+        "\" rx=\"2\" fill=\"" +
+        color +
+        "\"><title>" +
+        date_str +
+        ": " +
+        count.to_string() +
+        " commits</title></rect>",
+      )
+    }
+  }
+  // Legend
+  let legend_x = left_pad
+  let legend_y = height - 4
+  sb.write_string(
+    "<text x=\"" +
+    legend_x.to_string() +
+    "\" y=\"" +
+    legend_y.to_string() +
+    "\" font-size=\"10\" fill=\"currentColor\">Less</text>",
+  )
+  let legend_colors = ["#161b22", "#0e4429", "#006d32", "#26a641", "#39d353"]
+  for i = 0; i < legend_colors.length(); i = i + 1 {
+    let lx = legend_x + 30 + i * (cell_size + 2)
+    let ly = legend_y - 10
+    sb.write_string(
+      "<rect x=\"" +
+      lx.to_string() +
+      "\" y=\"" +
+      ly.to_string() +
+      "\" width=\"" +
+      cell_size.to_string() +
+      "\" height=\"" +
+      cell_size.to_string() +
+      "\" rx=\"2\" fill=\"" +
+      legend_colors[i] +
+      "\"/>",
+    )
+  }
+  let more_x = legend_x + 30 + legend_colors.length() * (cell_size + 2) + 4
+  sb.write_string(
+    "<text x=\"" +
+    more_x.to_string() +
+    "\" y=\"" +
+    legend_y.to_string() +
+    "\" font-size=\"10\" fill=\"currentColor\">More</text>",
+  )
+  sb.write_string("</svg>")
+  sb.to_string()
+}
+
+///|
+fn epoch_to_date_from_epoch(epoch : Int64) -> String {
+  let secs_per_day = 86400L
+  let mut days = epoch / secs_per_day
+  let mut year = 1970L
+  while true {
+    let is_leap = (year % 4L == 0L && year % 100L != 0L) || year % 400L == 0L
+    let year_days = if is_leap { 366L } else { 365L }
+    if days < year_days {
+      break
+    }
+    days -= year_days
+    year += 1L
+  }
+  let is_leap = (year % 4L == 0L && year % 100L != 0L) || year % 400L == 0L
+  let month_days = [
+    31L, if is_leap { 29L } else { 28L }, 31L, 30L, 31L, 30L, 31L, 31L, 30L,
+    31L, 30L, 31L,
+  ]
+  let mut month = 1L
+  for md in month_days {
+    if days < md {
+      break
+    }
+    days -= md
+    month += 1L
+  }
+  let day = days + 1L
+  let pad2 = fn(n : Int64) -> String {
+    if n < 10L { "0" + n.to_string() } else { n.to_string() }
+  }
+  year.to_string() + "-" + pad2(month) + "-" + pad2(day)
+}
+
+///|
+fn parse_month_from_date(date : String) -> Int {
+  // "YYYY-MM-DD" → month as 0-based index
+  if date.length() < 7 {
+    return -1
+  }
+  let m1 = date.unsafe_get(5)
+  let m2 = date.unsafe_get(6)
+  let month = (m1.to_int() - '0'.to_int()) * 10 + (m2.to_int() - '0'.to_int())
+  month - 1 // 0-based
+}
+
+///|
+fn heatmap_color(count : Int, max_count : Int) -> String {
+  if count == 0 {
+    return "#161b22"
+  }
+  if max_count <= 0 {
+    return "#161b22"
+  }
+  let ratio = count * 4 / max_count
+  match ratio {
+    0 => "#0e4429"
+    1 => "#006d32"
+    2 => "#26a641"
+    _ => "#39d353"
+  }
+}
+

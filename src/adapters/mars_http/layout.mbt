@@ -27,6 +27,8 @@ fn render_layout(
     @luna.text(" | "),
     @components.link("/activity", [@luna.text("activity")]),
     @luna.text(" | "),
+    @components.link("/graph", [@luna.text("graph")]),
+    @luna.text(" | "),
     @components.link("/search?q=", [@luna.text("search")]),
     @luna.text(" | "),
     @components.link("/actions", [@luna.text("actions")]),

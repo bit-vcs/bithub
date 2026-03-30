@@ -74,6 +74,11 @@ pub fn mars_route_specs() -> Array[RouteSpec] {
       path: "/api/actions/runs/status",
     },
     {
+      id: "activity_graph",
+      http_method: "GET",
+      path: "/graph",
+    },
+    {
       id: "releases",
       http_method: "GET",
       path: "/releases",

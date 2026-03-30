@@ -68,7 +68,7 @@ Last updated: 2026-03-30
 - [x] Tags / releases page (done 2026-03-30, by agent)
 - [x] Labels for issues (done 2026-03-30, by agent)
 - [x] Milestones for issues (done 2026-03-30, by agent)
-- [ ] Activity graph: commit frequency visualization
+- [x] Activity graph: commit frequency visualization (done 2026-03-30, by agent)
 - [ ] Add E2E tests for relay node list (`/relay`)
 
 ## Doing

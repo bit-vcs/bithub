@@ -1920,6 +1920,145 @@ pub fn ApiState::activity_feed(
   result
 }
 
+// ---- Activity Graph ----
+
+///|
+pub struct DayActivity {
+  date : String // "YYYY-MM-DD"
+  count : Int
+}
+
+///|
+/// Compute per-day commit counts for the activity heatmap.
+/// Returns entries sorted by date ascending.
+pub fn ApiState::commit_activity(self : ApiState) -> Array[DayActivity] {
+  let commits = self.list_commits()
+  let counts : Map[String, Int] = {}
+  for commit in commits {
+    let date = epoch_to_date(commit.timestamp)
+    if date.length() > 0 {
+      let cur = counts.get(date).unwrap_or(0)
+      counts.set(date, cur + 1)
+    }
+  }
+  let result : Array[DayActivity] = []
+  for date, count in counts {
+    result.push({ date, count })
+  }
+  result.sort_by(fn(a, b) { String::compare(a.date, b.date) })
+  result
+}
+
+///|
+/// Compute per-weekday commit counts (0=Sun, 6=Sat).
+pub fn ApiState::commit_weekday_distribution(self : ApiState) -> Array[Int] {
+  let dist = [0, 0, 0, 0, 0, 0, 0]
+  let commits = self.list_commits()
+  for commit in commits {
+    let wd = epoch_to_weekday(commit.timestamp)
+    if wd >= 0 && wd < 7 {
+      dist[wd] = dist[wd] + 1
+    }
+  }
+  dist
+}
+
+///|
+/// Compute per-hour commit counts (0..23).
+pub fn ApiState::commit_hour_distribution(self : ApiState) -> Array[Int] {
+  let dist = Array::make(24, 0)
+  let commits = self.list_commits()
+  for commit in commits {
+    let h = epoch_to_hour(commit.timestamp)
+    if h >= 0 && h < 24 {
+      dist[h] = dist[h] + 1
+    }
+  }
+  dist
+}
+
+///|
+fn epoch_to_date(raw : String) -> String {
+  if raw.length() == 0 {
+    return ""
+  }
+  let mut epoch = 0L
+  for c in raw {
+    if c >= '0' && c <= '9' {
+      epoch = epoch * 10L + (c.to_int() - '0'.to_int()).to_int64()
+    } else {
+      return ""
+    }
+  }
+  if epoch == 0L {
+    return ""
+  }
+  let secs_per_day = 86400L
+  let mut days = epoch / secs_per_day
+  let mut year = 1970L
+  while true {
+    let is_leap = (year % 4L == 0L && year % 100L != 0L) || year % 400L == 0L
+    let year_days = if is_leap { 366L } else { 365L }
+    if days < year_days {
+      break
+    }
+    days -= year_days
+    year += 1L
+  }
+  let is_leap = (year % 4L == 0L && year % 100L != 0L) || year % 400L == 0L
+  let month_days = [
+    31L, if is_leap { 29L } else { 28L }, 31L, 30L, 31L, 30L, 31L, 31L, 30L,
+    31L, 30L, 31L,
+  ]
+  let mut month = 1L
+  for md in month_days {
+    if days < md {
+      break
+    }
+    days -= md
+    month += 1L
+  }
+  let day = days + 1L
+  let pad2 = fn(n : Int64) -> String {
+    if n < 10L { "0" + n.to_string() } else { n.to_string() }
+  }
+  year.to_string() + "-" + pad2(month) + "-" + pad2(day)
+}
+
+///|
+fn epoch_to_weekday(raw : String) -> Int {
+  if raw.length() == 0 {
+    return -1
+  }
+  let mut epoch = 0L
+  for c in raw {
+    if c >= '0' && c <= '9' {
+      epoch = epoch * 10L + (c.to_int() - '0'.to_int()).to_int64()
+    } else {
+      return -1
+    }
+  }
+  // 1970-01-01 was Thursday (4)
+  let days = epoch / 86400L
+  ((days + 4L) % 7L).to_int()
+}
+
+///|
+fn epoch_to_hour(raw : String) -> Int {
+  if raw.length() == 0 {
+    return -1
+  }
+  let mut epoch = 0L
+  for c in raw {
+    if c >= '0' && c <= '9' {
+      epoch = epoch * 10L + (c.to_int() - '0'.to_int()).to_int64()
+    } else {
+      return -1
+    }
+  }
+  ((epoch % 86400L) / 3600L).to_int()
+}
+
 // ---- Compare (Branch Diff) ----
 
 ///|
