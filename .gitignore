@@ -7,3 +7,9 @@ playwright-report/
 test-results/
 .wrangler/
 .bithub/
+vrt/test-results/
+vrt/baselines/
+vrt/snapshots/
+vrt/output/
+vrt/vrt-report.json
+vrt/node_modules/

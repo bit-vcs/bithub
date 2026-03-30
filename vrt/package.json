@@ -1,0 +1,18 @@
+{
+  "name": "@bit-vcs/vrt",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test --experimental-strip-types src/**/*.test.ts",
+    "vrt": "playwright test",
+    "vrt:update": "playwright test --update-snapshots",
+    "analyze": "tsx src/cli.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0",
+    "tsx": "^4.21.0",
+    "pixelmatch": "^6.0.0",
+    "pngjs": "^7.0.0"
+  }
+}

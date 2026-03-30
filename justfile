@@ -70,6 +70,41 @@ agent-parallel:
 
 # ---- Workflow: Issue → Agent → Done ----
 
+# ---- VRT (Visual Regression + Semantic Testing) ----
+
+# Initialize VRT baselines (requires running server)
+vrt-init:
+  tsx vrt/src/vrt-cli.ts init
+
+# Capture current VRT snapshots
+vrt-capture:
+  tsx vrt/src/vrt-cli.ts capture
+
+# Verify VRT snapshots against baselines
+vrt-verify:
+  tsx vrt/src/vrt-cli.ts verify
+
+# Accept current snapshots as new baselines
+vrt-approve:
+  tsx vrt/src/vrt-cli.ts approve
+
+# Show VRT report
+vrt-report:
+  tsx vrt/src/vrt-cli.ts report
+
+# Show affected components
+vrt-affected:
+  tsx vrt/src/vrt-cli.ts affected
+
+# Run VRT unit tests
+vrt-test:
+  cd vrt && node --test --experimental-strip-types src/**/*.test.ts
+
+# Full VRT cycle: capture + verify
+vrt: vrt-capture vrt-verify
+
+# ---- Workflow: Issue → Agent → Done ----
+
 # Full workflow: create issue, run daemon once
 auto title body="":
   #!/usr/bin/env bash

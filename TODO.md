@@ -61,6 +61,24 @@ Last updated: 2026-03-17
 - [ ] Add `moon_ide` tool wrapping `moon ide peek-def` and `moon ide outline`
   - More accurate than grep for MoonBit symbol lookup
 
+### VRT + Semantic Verification
+
+- [ ] Multi-step goal runner: 大きなゴールを分解して複数コミットで達成するシナリオテスト
+  - Goal → sub-tasks に分解 → 各 sub-task で expectation 生成 → 逐次実行 → ゴール達成を判定
+  - 例: "ダークモード対応" → テーマ変数追加 → コンポーネント適用 → VRT 全ページ verify
+  - ランナー設計: `GoalRunner { goal, steps: Step[], currentStep, accumScore }`
+  - 各 step: expectation.json 自動生成 → subagent 実行 → verify → score → 次の step へ
+  - 失敗時: 修正ループ (max 3 retry) or ゴール縮小
+  - 最終スコア: step 成功率 × 品質スコア × (1 / トークン消費)
+- [ ] Playwright テストヘルパ: テスト失敗時のみ AI アサーション発火
+  - `nlAssert(page, "ナビに5つ以上リンクがある", { onlyOnFailure: true, dependsOn: ["src/Header.tsx"] })`
+  - 失敗時: Vision LLM でスクリーンショット分析 → 修正ヒント → エージェントに投げる
+  - dep graph 連携で影響のないアサーションをスキップ
+- [ ] introspect CLI コマンド: `vrt introspect` → spec.json 自動生成
+- [ ] spec verify CLI コマンド: `vrt spec-verify` → long-cycle 不変条件の検証
+- [ ] form/region ランドマークの spec invariant 自動生成 (現状 banner/main/nav のみ)
+- [ ] role-changed の spec 検出 (現状は a11y diff でのみ検出)
+
 ### Remaining features
 
 - [ ] Enable Container orchestration in wrangler.toml
