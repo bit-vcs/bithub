@@ -171,18 +171,27 @@ function matchesSingleA11yChange(exp: ExpectedA11yChange, actual: A11yChange): b
  * 将来的にはここを LLM 呼び出しに置き換え可能
  */
 export const STOP_WORDS = new Set([
-  "gets", "added", "removed", "changed", "from", "with",
-  "that", "this", "should", "have", "accessible", "the",
+  "gets", "from", "with", "that", "this", "should",
+  "have", "the", "for", "and", "all", "proper",
 ]);
 
 export const SYNONYMS: Record<string, string[]> = {
   input: ["textbox", "searchbox", "combobox"],
-  textbox: ["input"],
+  textbox: ["input", "searchbox"],
+  searchbox: ["input", "textbox", "search"],
   label: ["name", "accessible"],
+  name: ["label"],
   button: ["btn"],
   nav: ["navigation"],
   navigation: ["nav"],
   search: ["searchbox"],
+  tab: ["tablist", "tabpanel"],
+  tablist: ["tab", "tabs"],
+  tabpanel: ["tab", "panel", "content"],
+  panel: ["tabpanel"],
+  table: ["grid"],
+  column: ["columnheader", "header"],
+  header: ["columnheader", "column"],
 };
 
 function fuzzyDescriptionMatch(description: string, actual: A11yChange): boolean {

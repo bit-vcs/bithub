@@ -120,6 +120,10 @@ vrt-demo-fix:
 vrt-demo-multi:
   npx tsx vrt/src/demo-scenarios.ts
 
+# Run 6-step dashboard rebuild demo
+vrt-demo-multistep:
+  npx tsx vrt/src/demo-multistep.ts
+
 # Run VRT unit tests
 vrt-test:
   cd vrt && node --test --experimental-strip-types src/**/*.test.ts
