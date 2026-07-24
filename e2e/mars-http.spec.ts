@@ -6,8 +6,9 @@ test('home route is available', async ({ page }) => {
   expect(response).not.toBeNull();
   expect(response!.status()).toBe(200);
   await expect(page.getByRole('heading', { level: 1, name: 'bithub' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'README.md' })).toBeVisible();
-  await expect(page.getByRole('link', { name: 'files' })).toBeVisible();
+  await expect(page.getByRole('heading', { level: 2, name: 'Open Repository' })).toBeVisible();
+  await expect(page.locator('#ws-repo')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Clone & Open' })).toBeVisible();
 });
 
 test('healthz returns ok', async ({ request }) => {
