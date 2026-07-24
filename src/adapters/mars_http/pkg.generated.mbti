@@ -2,11 +2,16 @@
 package "bit-vcs/bithub/adapters/mars_http"
 
 import {
+  "bit-vcs/bithub/core",
   "mizchi/mars",
 }
 
 // Values
 pub fn create_app() -> @mars.Server
+
+pub fn create_app_from_repo(String) -> @mars.Server
+
+pub fn create_app_with_storage(@core.ApiState) -> @mars.Server
 
 // Errors
 

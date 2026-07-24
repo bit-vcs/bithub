@@ -9,6 +9,11 @@ enabled = true
 binding = "BITHUB_STORE"
 bucket_name = "bithub-store"
 
+[[artifacts]]
+binding = "ARTIFACTS"
+namespace = "bit-vcs-playground"
+remote = true
+
 [[services]]
 binding = "BIT_RELAY"
 service = "bit-relay"

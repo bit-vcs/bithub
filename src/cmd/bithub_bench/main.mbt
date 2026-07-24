@@ -10,7 +10,7 @@ struct BenchResult {
 
 ///|
 fn parse_iterations(raw : String) -> Int {
-  let parsed = @strconv.parse_int(raw) catch { _ => 20 }
+  let parsed = @string.parse_int(raw) catch { _ => 20 }
   if parsed > 0 {
     parsed
   } else {

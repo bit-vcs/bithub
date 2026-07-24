@@ -90,7 +90,7 @@ fn query_param(raw_path : String, key : String) -> String? {
     None => None
     Some(query) => {
       for pair_view in query.split("&") {
-        let pair = pair_view.to_string()
+        let pair = pair_view.to_owned()
         if pair.length() == 0 {
           continue
         }

@@ -50,24 +50,24 @@ fn strip_yaml_comment(text : String) -> String {
   let mut idx = 0
   while idx < text.length() {
     let ch = text.unsafe_get(idx)
-    if ch == '\'' && not(in_double) {
-      in_single = not(in_single)
+    if ch == '\'' && !(in_double) {
+      in_single = !(in_single)
       idx += 1
       continue
     }
-    if ch == '"' && not(in_single) {
-      in_double = not(in_double)
+    if ch == '"' && !(in_single) {
+      in_double = !(in_double)
       idx += 1
       continue
     }
-    if ch == '#' && not(in_single) && not(in_double) {
+    if ch == '#' && !(in_single) && !(in_double) {
       return String::unsafe_substring(text, start=0, end=idx)
         .trim_end(chars=" \t")
-        .to_string()
+        .to_owned()
     }
     idx += 1
   }
-  text.trim_end(chars=" \t").to_string()
+  text.trim_end(chars=" \t").to_owned()
 }
 
 ///|
@@ -75,7 +75,7 @@ fn collect_yaml_lines(text : String, errors : Array[String]) -> Array[YamlLine] 
   let lines : Array[YamlLine] = []
   let mut line_no = 1
   for line_view in text.split("\n") {
-    let raw = line_view.to_string().trim_end(chars="\r").to_string()
+    let raw = line_view.to_owned().trim_end(chars="\r").to_owned()
     let indent = count_indent(raw, line_no, errors)
     let content = if indent >= raw.length() {
       ""
@@ -97,7 +97,7 @@ fn yaml_parser_new(text : String) -> WorkflowYamlParser {
 ///|
 fn WorkflowYamlParser::skip_ignorable(self : WorkflowYamlParser) -> Unit {
   while self.idx < self.lines.length() {
-    let trimmed = self.lines[self.idx].text.trim(chars=" ").to_string()
+    let trimmed = self.lines[self.idx].text.trim(chars=" ").to_owned()
     if trimmed.length() == 0 || trimmed == "---" || trimmed == "..." {
       self.idx += 1
     } else {
@@ -118,7 +118,7 @@ fn after_sequence_dash(text : String) -> String {
   } else {
     String::unsafe_substring(text, start=2, end=text.length())
     .trim_start(chars=" ")
-    .to_string()
+    .to_owned()
   }
 }
 
@@ -131,17 +131,17 @@ fn split_key_value(text : String) -> (String, String?)? {
   let mut idx = 0
   while idx < text.length() {
     let ch = text.unsafe_get(idx)
-    if ch == '\'' && not(in_double) {
-      in_single = not(in_single)
+    if ch == '\'' && !(in_double) {
+      in_single = !(in_single)
       idx += 1
       continue
     }
-    if ch == '"' && not(in_single) {
-      in_double = not(in_double)
+    if ch == '"' && !(in_single) {
+      in_double = !(in_double)
       idx += 1
       continue
     }
-    if not(in_single) && not(in_double) {
+    if !(in_single) && !(in_double) {
       if ch == '[' {
         bracket_depth += 1
       } else if ch == ']' && bracket_depth > 0 {
@@ -153,14 +153,14 @@ fn split_key_value(text : String) -> (String, String?)? {
       } else if ch == ':' && bracket_depth == 0 && brace_depth == 0 {
         let key = String::unsafe_substring(text, start=0, end=idx)
           .trim(chars=" ")
-          .to_string()
+          .to_owned()
         let rest = String::unsafe_substring(
             text,
             start=idx + 1,
             end=text.length(),
           )
           .trim_start(chars=" ")
-          .to_string()
+          .to_owned()
         if rest.length() == 0 {
           return Some((key, None))
         }
@@ -183,17 +183,17 @@ fn split_inline_items(text : String) -> Array[String] {
   let mut idx = 0
   while idx < text.length() {
     let ch = text.unsafe_get(idx)
-    if ch == '\'' && not(in_double) {
-      in_single = not(in_single)
+    if ch == '\'' && !(in_double) {
+      in_single = !(in_single)
       idx += 1
       continue
     }
-    if ch == '"' && not(in_single) {
-      in_double = not(in_double)
+    if ch == '"' && !(in_single) {
+      in_double = !(in_double)
       idx += 1
       continue
     }
-    if not(in_single) && not(in_double) {
+    if !(in_single) && !(in_double) {
       if ch == '[' {
         bracket_depth += 1
       } else if ch == ']' && bracket_depth > 0 {
@@ -206,7 +206,7 @@ fn split_inline_items(text : String) -> Array[String] {
         items.push(
           String::unsafe_substring(text, start~, end=idx)
           .trim(chars=" ")
-          .to_string(),
+          .to_owned(),
         )
         start = idx + 1
         idx += 1
@@ -217,7 +217,7 @@ fn split_inline_items(text : String) -> Array[String] {
   }
   let last = String::unsafe_substring(text, start~, end=text.length())
     .trim(chars=" ")
-    .to_string()
+    .to_owned()
   if last.length() > 0 {
     items.push(last)
   }
@@ -257,7 +257,7 @@ fn parse_inline_map(text : String) -> YamlValue {
 
 ///|
 fn parse_inline_value(text : String) -> YamlValue {
-  let trimmed = text.trim(chars=" ").to_string()
+  let trimmed = text.trim(chars=" ").to_owned()
   if trimmed.length() == 0 || trimmed == "null" || trimmed == "~" {
     return YamlValue::Null
   }
@@ -395,7 +395,7 @@ fn WorkflowYamlParser::parse_sequence(
     self.skip_ignorable()
     guard self.idx < self.lines.length() else { break }
     let line = self.lines[self.idx]
-    if line.indent != indent || not(is_sequence_item(line.text)) {
+    if line.indent != indent || !(is_sequence_item(line.text)) {
       break
     }
     let item_text = after_sequence_dash(line.text)
@@ -592,11 +592,11 @@ fn yaml_as_optional_int(
 ) -> Int? {
   match value {
     Some(Str(text)) => {
-      let trimmed = text.trim(chars=" \t\r\n").to_string()
+      let trimmed = text.trim(chars=" \t\r\n").to_owned()
       if trimmed.length() == 0 {
         return None
       }
-      let parsed = @strconv.parse_int64(trimmed) catch {
+      let parsed = @string.parse_int64(trimmed) catch {
         _ => {
           errors.push(ctx + " must be an integer")
           return None
@@ -730,7 +730,7 @@ fn expand_matrix_includes(
       }
       row_index += 1
     }
-    if not(matched) {
+    if !(matched) {
       expanded.push(matrix_row_merge({}, include_row))
     }
   }
@@ -754,7 +754,7 @@ fn filter_matrix_excludes(
         break
       }
     }
-    if not(excluded) {
+    if !(excluded) {
       filtered.push(row)
     }
   }
@@ -1223,7 +1223,7 @@ fn parse_trigger(value : YamlValue?, errors : Array[String]) -> ParsedTriggers {
       let has_push_like = yaml_obj_get(fields, "push") is Some(_) ||
         yaml_obj_get(fields, "pull_request") is Some(_) ||
         yaml_obj_get(fields, "pull_request_target") is Some(_)
-      if not(has_push_like) && workflow_call is None {
+      if !(has_push_like) && workflow_call is None {
         errors.push("only push and workflow_call triggers are supported in MVP")
       }
       {

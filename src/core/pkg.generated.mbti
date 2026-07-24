@@ -2,40 +2,105 @@
 package "bit-vcs/bithub/core"
 
 import {
+  "mizchi/bit/object",
+  "mizchi/bit/types",
   "mizchi/bit/x/kv",
 }
 
 // Values
 pub fn extract_branch_from_relay_ref(String) -> String?
 
+pub fn fire_spawn_request(CiSpawnConfig, CiSpawnRequest) -> Bool
+
+pub fn git_head_sha(String) -> String?
+
 pub fn healthz_text() -> String
 
 pub fn home_text() -> String
 
+pub fn load_files_into_storage(&Storage, String, Array[String]) -> Unit
+
+pub fn load_git_branches_into_storage(&Storage, &@types.RepoFileSystem, String) -> Unit
+
+pub fn load_git_commits_into_storage(&Storage, &@types.RepoFileSystem, String, max_count? : Int) -> Unit
+
+pub fn load_git_tags_into_storage(&Storage, &@types.RepoFileSystem, String) -> Unit
+
+pub fn load_relay_issues_into_storage(&Storage, String) -> Int
+
+pub fn load_workflow_files(&Storage, String) -> Unit
+
 pub fn mars_route_specs() -> Array[RouteSpec]
+
+pub fn parse_int_safe(String) -> Int
+
+pub fn scan_files(String, limit? : Int) -> Array[String]
+
+pub fn seed_files(&Storage) -> Unit
+
+pub fn simple_hash(String) -> String
+
+pub fn spawn_request_to_env_json(CiSpawnRequest, CiSpawnConfig) -> String
+
+pub fn write_file_and_commit(String, String, String, String) -> Unit
+
+pub fn xml_escape(String) -> String
 
 // Errors
 
 // Types and methods
+pub struct ActivityEvent {
+  kind : String
+  id : String
+  title : String
+  timestamp : String
+  detail : String
+}
+
 pub struct ApiState {
   store : &Storage
+  repo_root : String
 }
+pub fn ApiState::activity_feed(Self, limit? : Int) -> Array[ActivityEvent]
+pub fn ApiState::activity_rss(Self, String) -> String
+pub fn ApiState::add_comment(Self, String, String, String, String) -> Bool
+pub fn ApiState::add_pr_comment(Self, String, String, String, String) -> Bool
 pub fn ApiState::authenticate(Self, String?) -> AuthResult
+pub fn ApiState::blame(Self, String) -> Array[BlameLine]?
+pub fn ApiState::build_spawn_requests(Self, String) -> Array[CiSpawnRequest]
+pub fn ApiState::close_pull_request(Self, String) -> Bool
+pub fn ApiState::compare_commits(Self, String, String) -> CompareResult?
+pub fn ApiState::create_issue(Self, String, String, String, String) -> String
+pub fn ApiState::create_pull_request(Self, String, String, String, String, String, String) -> String
+pub fn ApiState::edit_file(Self, String, String, String, String, String) -> FileEditResult
 pub fn ApiState::file_text(Self, String) -> String?
+pub fn ApiState::from_repo(String) -> Self
 pub fn ApiState::get_ci_run(Self, String) -> CiRun?
 pub fn ApiState::get_ci_run_detail(Self, String) -> CiRunDetail?
 pub fn ApiState::get_commit(Self, String) -> CommitDetail?
+pub fn ApiState::get_issue(Self, String) -> IssueDetail?
+pub fn ApiState::get_pull_request(Self, String) -> PullRequestDetail?
 pub fn ApiState::list_branches(Self) -> Array[BranchEntry]
 pub fn ApiState::list_ci_runs(Self) -> Array[CiRun]
 pub fn ApiState::list_commits(Self) -> Array[CommitEntry]
 pub fn ApiState::list_entries(Self, String) -> Array[FileEntry]
+pub fn ApiState::list_issues(Self) -> Array[IssueEntry]
+pub fn ApiState::list_pr_comments(Self, String) -> Array[IssueComment]
+pub fn ApiState::list_pull_requests(Self) -> Array[PullRequest]
+pub fn ApiState::list_tags(Self) -> Array[TagEntry]
 pub fn ApiState::list_tokens(Self) -> Array[TokenInfo]
+pub fn ApiState::list_webhooks(Self) -> Array[WebhookLogEntry]
 pub fn ApiState::list_workflows(Self) -> Array[WorkflowEntry]
+pub fn ApiState::log_webhook(Self, String, String, String, String, Int) -> Unit
 pub fn ApiState::lookup_file(Self, String) -> FileLookup
+pub fn ApiState::merge_pull_request(Self, String) -> Bool
 pub fn ApiState::new() -> Self
 pub fn ApiState::process_relay_webhook(Self, Json) -> Array[CiRun]
 pub fn ApiState::readme_markdown(Self) -> String
+pub fn ApiState::repo_stats(Self) -> RepoStats
 pub fn ApiState::resolve_token(Self, String) -> TokenInfo?
+pub fn ApiState::search(Self, String, max_results? : Int) -> Array[SearchResult]
+pub fn ApiState::update_issue_state(Self, String, String) -> Bool
 pub fn ApiState::update_step_status(Self, String, String, Int, String, String) -> Bool
 pub fn ApiState::with_storage(&Storage) -> Self
 pub fn ApiState::workflow_detail(Self, String) -> WorkflowDetail?
@@ -44,6 +109,13 @@ pub enum AuthResult {
   Authenticated(TokenInfo)
   Anonymous
   InvalidToken
+}
+
+pub struct BlameLine {
+  line_number : Int
+  content : String
+  commit_sha : String
+  author : String
 }
 
 pub struct BranchEntry {
@@ -80,6 +152,30 @@ pub struct CiRunDetail {
   jobs : Array[CiJobRunDetail]
 }
 
+pub(all) struct CiSpawnConfig {
+  orchestrator_url : String
+  auth_token : String
+  bithub_url : String
+  bithub_token : String
+  container_image : String
+}
+
+pub struct CiSpawnRequest {
+  run_id : String
+  job_id : String
+  job_name : String
+  steps : Array[CiSpawnStep]
+  repo_url : String
+  ref_name : String
+}
+
+pub struct CiSpawnStep {
+  index : Int
+  name : String
+  uses : String
+  run_cmd : String
+}
+
 pub struct CiStepRun {
   index : Int
   name : String
@@ -103,10 +199,23 @@ pub struct CommitEntry {
   timestamp : String
 }
 
+pub struct CompareResult {
+  base_sha : String
+  head_sha : String
+  commits : Array[CommitEntry]
+  all_files : Array[DiffFileEntry]
+}
+
 pub struct DiffFileEntry {
   path : String
   kind : String
   patch : String
+}
+
+pub struct FileEditResult {
+  ok : Bool
+  commit_sha : String
+  error : String
 }
 
 pub struct FileEntry {
@@ -121,25 +230,106 @@ pub struct FileLookup {
   content : String?
 }
 
+pub struct FsStorage {
+  root : String
+}
+pub fn FsStorage::new(String) -> Self
+pub impl Storage for FsStorage
+
+pub struct IdbGitFs {
+  prefix : String
+}
+pub fn IdbGitFs::new(prefix? : String) -> Self
+pub impl @types.FileSystem for IdbGitFs
+pub impl @types.RepoFileSystem for IdbGitFs
+
+pub struct IdbGitRepo {
+  fs : IdbGitFs
+  root : String
+  git_dir : String
+}
+pub fn IdbGitRepo::add_and_commit(Self, Array[String], String, String) -> @object.ObjectId raise @object.GitError
+pub fn IdbGitRepo::head_commit(Self) -> @object.ObjectId?
+pub fn IdbGitRepo::init(Self) -> Unit raise @object.GitError
+pub fn IdbGitRepo::new(workspace? : String) -> Self
+pub fn IdbGitRepo::read_file(Self, String) -> String?
+pub fn IdbGitRepo::write_file(Self, String, String) -> Unit raise @object.GitError
+
+pub struct IssueComment {
+  author : String
+  body : String
+  created_at : String
+}
+
+pub struct IssueDetail {
+  issue : IssueEntry
+  comments : Array[IssueComment]
+}
+
+pub struct IssueEntry {
+  id : String
+  title : String
+  state : String
+  body : String
+  author : String
+  created_at : String
+}
+
 pub struct MapStorage {
   data : Map[String, String]
 }
 pub fn MapStorage::new() -> Self
+pub impl Storage for MapStorage
 
 pub struct MemoryStorage {
   kv : @kv.Kv
 }
 pub fn MemoryStorage::new_seeded() -> Self
 
+pub struct NodeFs {
+  _dummy : Int
+}
+pub fn NodeFs::new() -> Self
+
+pub struct PullRequest {
+  id : String
+  title : String
+  state : String
+  author : String
+  base_ref : String
+  head_ref : String
+  created_at : String
+}
+
+pub struct PullRequestDetail {
+  pr : PullRequest
+  body : String
+  compare : CompareResult?
+}
+
+pub struct R2Storage {
+  bucket_name : String
+}
+pub fn R2Storage::new(String) -> Self
+pub impl Storage for R2Storage
+
+pub struct RepoStats {
+  file_count : Int
+  commit_count : Int
+  branch_count : Int
+  issue_count : Int
+  pr_count : Int
+  contributors : Array[(String, Int)]
+}
+
 pub enum Role {
   Owner
   Write
   Read
-}
+} derive(Eq)
 pub fn Role::can_admin(Self) -> Bool
 pub fn Role::can_write(Self) -> Bool
 pub fn Role::to_string(Self) -> String
-pub impl Eq for Role
 
 pub struct RouteSpec {
   id : String
@@ -147,9 +337,29 @@ pub struct RouteSpec {
   path : String
 }
 
+pub struct SearchResult {
+  path : String
+  line_number : Int
+  line : String
+}
+
+pub struct TagEntry {
+  name : String
+  sha : String
+  message : String
+}
+
 pub struct TokenInfo {
   identity : String
   role : Role
+}
+
+pub struct WebhookLogEntry {
+  id : String
+  event_type : String
+  source : String
+  timestamp : String
+  triggered : Int
 }
 
 pub struct WorkflowDetail {
@@ -185,9 +395,9 @@ pub struct WorkflowStepSummary {
 
 // Traits
 pub(open) trait Storage {
-  get(Self, String) -> Bytes?
-  set_string(Self, String, String) -> Unit
-  list(Self, String) -> Array[String]
-  has(Self, String) -> Bool
+  fn get(Self, String) -> Bytes?
+  fn set_string(Self, String, String) -> Unit
+  fn list(Self, String) -> Array[String]
+  fn has(Self, String) -> Bool
 }
 

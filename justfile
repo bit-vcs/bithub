@@ -9,7 +9,11 @@ check:
   moon check --target js
 
 test:
-  moon test --target js
+  moon test --target js --package bithub
+  just test-artifacts
+
+test-artifacts:
+  node --test tests/artifacts_api.test.mjs
 
 build:
   moon build --target js

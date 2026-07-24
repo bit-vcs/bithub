@@ -1,20 +1,24 @@
+supported_targets = "js"
+
 import {
-  "mizchi/bit" @bit,
-  "mizchi/bit/lib" @bitlib,
-  "mizchi/bit/x/hub" @hub,
+  "mizchi/bit_core" @bit,
+  "mizchi/bit_lib" @bitlib,
+  "mizchi/bit_object" @object,
+  "mizchi/bit_types" @types,
+  "mizchi/bitx_hub" @hub,
   "mizchi/js/core" @js,
   "mizchi/js/node/child_process" @nchild,
   "mizchi/js/node/fs" @nfs,
   "mizchi/js/node/path" @npath,
   "mizchi/js/node/process" @nprocess,
   "mizchi/luna" @luna,
-  "mizchi/luna/x/components" @components,
+  "bit-vcs/bithub/adapters/ui_components" @components,
   "mizchi/mars" @mars,
   "mizchi/markdown" @markdown,
   "mizchi/markdown/syntree_api" @mdsyntree,
   "mizchi/sol" @sol,
   "moonbitlang/core/json" @json,
-  "moonbitlang/core/strconv" @strconv,
+  "moonbitlang/core/string" @string,
   "moonbitlang/x/fs",
 }
 
@@ -23,7 +27,6 @@ import {
 } for "test"
 
 options(
-  "supported-targets": "js",
   is_main: true,
   link: { "js": { "format": "cjs" } },
   targets: {

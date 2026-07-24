@@ -1,6 +1,6 @@
 ///|
 fn parse_port(raw : String) -> Int {
-  let parsed = @strconv.parse_int(raw) catch { _ => 4175 }
+  let parsed = @string.parse_int(raw) catch { _ => 4175 }
   if parsed > 0 {
     parsed
   } else {

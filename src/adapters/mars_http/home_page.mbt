@@ -157,7 +157,7 @@ fn render_home_page() -> String {
     #|</script>
   render_layout("bithub", [
     @luna.raw_html("<style>" + home_css + "</style>"),
-    @luna.raw_html(
+    @luna.raw_html((
       #|<div class="landing">
       #|<h1>bithub</h1>
       #|<p>Browse and collaborate on any GitHub repository.</p>
@@ -188,7 +188,7 @@ fn render_home_page() -> String {
       #|
       #|<div class="ws-recent"><h3>Recent workspaces</h3><div id="ws-recent-list"></div></div>
       #|</div>
-    ),
+    )),
   ]) + home_js
 }
 
@@ -353,4 +353,3 @@ fn render_workspace_spa(ws : String) -> String {
     ],
   ) + spa_css + spa_js
 }
-

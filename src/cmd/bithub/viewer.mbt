@@ -196,7 +196,7 @@ pub fn RepoState::render_layout(
 
 ///|
 fn normalize_route_base(route_base : String) -> String {
-  let trimmed = route_base.trim(chars=" \n\r\t").to_string()
+  let trimmed = route_base.trim(chars=" \n\r\t").to_owned()
   if trimmed.length() == 0 || trimmed == "/" {
     return ""
   }
@@ -601,7 +601,7 @@ fn build_tree_nodes(
     match classify_child_path(path, prefix) {
       Some((name, is_dir)) =>
         if is_dir {
-          if not(dir_names.contains(name)) {
+          if !(dir_names.contains(name)) {
             dir_names.push(name)
           }
         } else {
@@ -781,12 +781,12 @@ fn classify_child_path(path : String, prefix : String) -> (String, Bool)? {
     if parts.length() == 0 {
       return None
     }
-    let name = parts[0].to_string()
+    let name = parts[0].to_owned()
     return Some((name, parts.length() > 1))
   }
 
   let base = prefix + "/"
-  if not(path.has_prefix(base)) {
+  if !(path.has_prefix(base)) {
     return None
   }
   let rest = String::unsafe_substring(
@@ -798,7 +798,7 @@ fn classify_child_path(path : String, prefix : String) -> (String, Bool)? {
   if parts.length() == 0 {
     return None
   }
-  let name = parts[0].to_string()
+  let name = parts[0].to_owned()
   Some((name, parts.length() > 1))
 }
 

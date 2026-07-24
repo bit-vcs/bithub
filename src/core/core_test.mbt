@@ -49,8 +49,8 @@ test "ApiState exposes README markdown text" {
 test "ApiState lists filer entries as data" {
   let api = ApiState::new()
   let root = api.list_entries("")
-  assert_true(root.any(fn(entry) { entry.name == "README.md" && not(entry.is_dir) }))
-  assert_true(root.any(fn(entry) { entry.name == "moon.mod.json" && not(entry.is_dir) }))
+  assert_true(root.any(fn(entry) { entry.name == "README.md" && !(entry.is_dir) }))
+  assert_true(root.any(fn(entry) { entry.name == "moon.mod.json" && !(entry.is_dir) }))
   assert_true(root.any(fn(entry) { entry.name == "src" && entry.is_dir }))
 
   let core = api.list_entries("src/core")
@@ -58,7 +58,7 @@ test "ApiState lists filer entries as data" {
     core.any(fn(entry) {
       entry.name == "api_state.mbt" &&
       entry.path == "src/core/api_state.mbt" &&
-      not(entry.is_dir)
+      !(entry.is_dir)
     }),
   )
 }
@@ -111,7 +111,9 @@ test "ApiState workflow_detail returns job and step info" {
   let build = detail.jobs[0]
   inspect(build.id, content="build")
   inspect(build.step_count, content="4")
-  inspect(build.steps[0].uses, content="Some(\"actions/checkout@v4\")")
+  debug_inspect(build.steps[0].uses, content=(
+    #|Some("actions/checkout@v4")
+  ))
   inspect(build.steps[1].name, content="Install dependencies")
 }
 
@@ -123,16 +125,20 @@ test "ApiState workflow_detail returns None for missing file" {
 
 ///|
 test "extract_branch_from_relay_ref extracts branch name" {
-  inspect(
+  debug_inspect(
     extract_branch_from_relay_ref("refs/relay/incoming/main"),
-    content="Some(\"main\")",
+    content=(
+      #|Some("main")
+    ),
   )
-  inspect(
+  debug_inspect(
     extract_branch_from_relay_ref("refs/relay/incoming/feature/foo"),
-    content="Some(\"feature/foo\")",
+    content=(
+      #|Some("feature/foo")
+    ),
   )
-  inspect(extract_branch_from_relay_ref("refs/heads/main"), content="None")
-  inspect(extract_branch_from_relay_ref(""), content="None")
+  debug_inspect(extract_branch_from_relay_ref("refs/heads/main"), content="None")
+  debug_inspect(extract_branch_from_relay_ref(""), content="None")
 }
 
 ///|
@@ -221,7 +227,7 @@ test "get_ci_run retrieves a specific run" {
   let json = make_relay_webhook("evt-020", "refs/relay/incoming/main")
   let _ = api.process_relay_webhook(json)
   let run = api.get_ci_run("evt-020")
-  assert_true(not(run is None))
+  assert_true(!(run is None))
   inspect(run.unwrap().workflow_name, content="CI")
   assert_true(api.get_ci_run("nonexistent") is None)
 }
@@ -284,7 +290,7 @@ fn test_storage() -> &Storage {
 test "MapStorage: get/set/has/list" {
   let s = test_storage()
   assert_true(s.get("foo") is None)
-  assert_true(not(s.has("foo")))
+  assert_true(!(s.has("foo")))
   s.set_string("foo", "bar")
   assert_true(s.has("foo"))
   let bytes = s.get("foo").unwrap()
@@ -300,13 +306,19 @@ test "MapStorage: list returns child keys at one level" {
   s.set_string("z", "4")
   let children = s.list("a")
   children.sort_by(fn(a, b) { String::compare(a, b) })
-  inspect(children, content="[\"b\", \"x\"]")
+  debug_inspect(children, content=(
+    #|["b", "x"]
+  ))
   let grandchildren = s.list("a/b")
   grandchildren.sort_by(fn(a, b) { String::compare(a, b) })
-  inspect(grandchildren, content="[\"c\", \"d\"]")
+  debug_inspect(grandchildren, content=(
+    #|["c", "d"]
+  ))
   let root = s.list("")
   root.sort_by(fn(a, b) { String::compare(a, b) })
-  inspect(root, content="[\"a\", \"z\"]")
+  debug_inspect(root, content=(
+    #|["a", "z"]
+  ))
 }
 
 ///|
@@ -319,7 +331,7 @@ test "FsStorage: get/set/has/list round-trip" {
   rm_rf(dir)
   let s : &Storage = FsStorage::new(dir)
   assert_true(s.get("foo") is None)
-  assert_true(not(s.has("foo")))
+  assert_true(!(s.has("foo")))
   s.set_string("foo", "bar")
   assert_true(s.has("foo"))
   let bytes = s.get("foo").unwrap()
@@ -328,9 +340,13 @@ test "FsStorage: get/set/has/list round-trip" {
   s.set_string("a/b/c", "nested")
   assert_true(s.has("a/b/c"))
   let children = s.list("a")
-  inspect(children, content="[\"b\"]")
+  debug_inspect(children, content=(
+    #|["b"]
+  ))
   let grandchildren = s.list("a/b")
-  inspect(grandchildren, content="[\"c\"]")
+  debug_inspect(grandchildren, content=(
+    #|["c"]
+  ))
 }
 
 ///|

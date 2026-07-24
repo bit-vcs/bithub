@@ -13,109 +13,6 @@ pub struct FileLookup {
 }
 
 ///|
-// Adapter: @bitfs.Fs -> @bitlib.WorkingTree
-priv struct KvWorkingTree {
-  fs : @bitfs.Fs
-  backing_fs : &@bit.RepoFileSystem
-  write_fs : &@bit.FileSystem
-}
-
-///|
-impl @bitlib.WorkingTree for KvWorkingTree with read_file(self, path) {
-  self.fs.read_file(self.backing_fs, path)
-}
-
-///|
-impl @bitlib.WorkingTree for KvWorkingTree with write_file(self, path, data) {
-  self.fs.write_file(path, data)
-}
-
-///|
-impl @bitlib.WorkingTree for KvWorkingTree with remove_file(self, path) {
-  self.fs.remove_file(path)
-}
-
-///|
-impl @bitlib.WorkingTree for KvWorkingTree with is_file(self, path) {
-  self.fs.is_file(self.backing_fs, path)
-}
-
-///|
-impl @bitlib.WorkingTree for KvWorkingTree with is_dir(self, path) {
-  self.fs.is_dir(self.backing_fs, path)
-}
-
-///|
-impl @bitlib.WorkingTree for KvWorkingTree with readdir(self, path) {
-  self.fs.readdir(self.backing_fs, path)
-}
-
-///|
-impl @bitlib.WorkingTree for KvWorkingTree with is_dirty(self) {
-  self.fs.is_dirty()
-}
-
-///|
-impl @bitlib.WorkingTree for KvWorkingTree with rollback(self) {
-  self.fs.rollback()
-}
-
-///|
-impl @bitlib.WorkingTree for KvWorkingTree with get_working_files(self) {
-  self.fs.get_working_files()
-}
-
-///|
-impl @bitlib.WorkingTree for KvWorkingTree with snapshot(
-  self,
-  message,
-  author,
-  timestamp,
-) {
-  let snapshot = self.fs.snapshot(
-    self.write_fs,
-    self.backing_fs,
-    message,
-    author,
-    timestamp,
-  )
-  snapshot.commit_id
-}
-
-///|
-impl @bitlib.WorkingTree for KvWorkingTree with checkout(self, commit_id) {
-  self.fs.checkout_snapshot(self.backing_fs, commit_id)
-}
-
-///|
-// Adapter: filesystem object db -> @bitlib.ObjectStore
-priv struct KvObjectStore {
-  backing_fs : &@bit.RepoFileSystem
-  write_fs : &@bit.FileSystem
-  git_dir : String
-}
-
-///|
-impl @bitlib.ObjectStore for KvObjectStore with get(self, id) {
-  let db = @bitlib.ObjectDb::load(self.backing_fs, self.git_dir)
-  db.get(self.backing_fs, id)
-}
-
-///|
-impl @bitlib.ObjectStore for KvObjectStore with put(self, obj_type, data) {
-  @bitlib.write_loose_object(self.write_fs, self.git_dir, obj_type, data)
-}
-
-///|
-impl @bitlib.ObjectStore for KvObjectStore with has(self, id) {
-  let db = @bitlib.ObjectDb::load(self.backing_fs, self.git_dir) catch {
-    _ => return false
-  }
-  let obj = db.get(self.backing_fs, id) catch { _ => return false }
-  obj is Some(_)
-}
-
-///|
 pub struct ApiState {
   store : &Storage
   repo_root : String
@@ -191,7 +88,7 @@ pub fn ApiState::list_entries(
   let entries : Array[FileEntry] = []
   for name in names {
     let full_path = join_path(path, name)
-    entries.push({ name, path: full_path, is_dir: not(self.store.has(full_path)) })
+    entries.push({ name, path: full_path, is_dir: !(self.store.has(full_path)) })
   }
   entries
 }
@@ -452,10 +349,10 @@ pub fn ApiState::list_branches(self : ApiState) -> Array[BranchEntry] {
     }
   }
   entries.sort_by(fn(a, b) {
-    if a.current && not(b.current) {
+    if a.current && !(b.current) {
       return -1
     }
-    if not(a.current) && b.current {
+    if !(a.current) && b.current {
       return 1
     }
     String::compare(a.name, b.name)
@@ -504,7 +401,7 @@ pub fn ApiState::list_workflows(self : ApiState) -> Array[WorkflowEntry] {
   names.sort_by(fn(a, b) { String::compare(a, b) })
   for name in names {
     let path = workflow_dir + "/" + name
-    if not(name.has_suffix(".yml") || name.has_suffix(".yaml")) {
+    if !(name.has_suffix(".yml") || name.has_suffix(".yaml")) {
       continue
     }
     match self.store.get(path) {
@@ -683,7 +580,7 @@ fn collect_search_results(
             if results.length() >= max_results {
               return
             }
-            let line = line_view.to_string()
+            let line = line_view.to_owned()
             if string_contains(line, query) {
               results.push({ path: full_path, line_number: line_num, line })
             }
@@ -1386,7 +1283,7 @@ pub fn ApiState::blame(
   }
   let lines : Array[String] = []
   for line_view in content.split("\n") {
-    lines.push(line_view.to_string())
+    lines.push(line_view.to_owned())
   }
   // Walk commits in reverse chronological order to find which commit
   // last touched each line. Simple approach: check if file changed in
@@ -1533,7 +1430,7 @@ pub fn ApiState::compare_commits(
       Some(detail) => {
         commits.push(detail.commit)
         for df in detail.diff_files {
-          if not(seen.contains(df.path)) {
+          if !(seen.contains(df.path)) {
             seen.set(df.path, true)
             all_files.push(df)
           }
@@ -1543,7 +1440,7 @@ pub fn ApiState::compare_commits(
       None => break
     }
   }
-  if not(found_base) && commits.length() == 0 {
+  if !(found_base) && commits.length() == 0 {
     return None
   }
   Some({ base_sha, head_sha, commits, all_files })

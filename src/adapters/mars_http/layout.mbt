@@ -245,7 +245,7 @@ fn render_diff_patch(patch : String) -> @luna.Node[Unit, String] {
   }
   let lines : Array[@luna.Node[Unit, String]] = []
   for line_view in patch.split("\n") {
-    let line = line_view.to_string()
+    let line = line_view.to_owned()
     let cls = if line.has_prefix("+") {
       "diff-add"
     } else if line.has_prefix("-") {

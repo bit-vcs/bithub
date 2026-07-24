@@ -1,6 +1,8 @@
+supported_targets = "js"
+
 import {
   "mizchi/luna" @luna,
-  "mizchi/luna/x/components" @components,
+  "bit-vcs/bithub/adapters/ui_components" @components,
   "mizchi/mars" @mars,
   "mizchi/markdown" @markdown,
   "mizchi/sol" @sol,
@@ -8,5 +10,4 @@ import {
 }
 
 options(
-  "supported-targets": "js",
 )

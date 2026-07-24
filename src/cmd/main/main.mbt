@@ -1,13 +1,13 @@
 ///|
-let lazy_app : Ref[@mars.Server?] = Ref::new(None)
-let r2_initialized : Ref[Bool] = Ref::new(false)
+let lazy_app : Ref[@mars.Server?] = Ref(None)
+let r2_initialized : Ref[Bool] = Ref(false)
 
 ///|
 fn get_app(env : @mars.JsEnv) -> @mars.Server {
   match lazy_app.val {
     Some(app) => app
     None => {
-      let app = if has_r2_binding(env) && not(r2_initialized.val) {
+      let app = if has_r2_binding(env) && !(r2_initialized.val) {
         // Use R2-backed storage on Cloudflare Workers
         r2_initialized.val = true
         let r2 = @core.R2Storage::new("BITHUB_STORE")
