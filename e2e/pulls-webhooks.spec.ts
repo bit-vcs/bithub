@@ -187,10 +187,15 @@ test.describe('webhook log', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Navigation
+// Workspace landing page
 // ---------------------------------------------------------------------------
-test('nav includes pulls link', async ({ page }) => {
+test('workspace landing page prompts to open a repository', async ({ page }) => {
   await page.goto('/');
-  const nav = page.getByRole('navigation', { name: 'primary navigation' });
-  await expect(nav.getByRole('link', { name: 'pulls' })).toBeVisible();
+  await expect(
+    page.getByRole('heading', { level: 2, name: 'Open Repository' }),
+  ).toBeVisible();
+  await expect(page.locator('#ws-repo')).toBeVisible();
+  await expect(
+    page.getByRole('button', { name: 'Clone & Open' }),
+  ).toBeVisible();
 });
