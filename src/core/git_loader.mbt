@@ -98,7 +98,7 @@ pub fn write_file_and_commit(
   write_file_to_disk(full_path, content)
   let dir = parent_dir(full_path)
   git_exec(dir, "git add " + full_path)
-  let author_arg = if author.length() > 0 && not(author.contains("<")) {
+  let author_arg = if author.length() > 0 && !(author.contains("<")) {
     " --author=\"" + author + " <" + author + "@bithub>\""
   } else if author.length() > 0 {
     " --author=\"" + author + "\""
@@ -170,7 +170,7 @@ pub fn load_git_tags_into_storage(
   for name in names {
     match read_file_string(tag_dir + "/" + name) {
       Some(sha_raw) => {
-        let sha = sha_raw.trim_start(chars=" \n\r\t").trim_end(chars=" \n\r\t").to_string()
+        let sha = sha_raw.trim_start(chars=" \n\r\t").trim_end(chars=" \n\r\t").to_owned()
         store.set_string("git/tags/" + name, "sha=" + sha + "\nmessage=" + name)
       }
       None => ()

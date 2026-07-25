@@ -1,6 +1,6 @@
 ///|
 fn parse_port(raw : String) -> Int {
-  let parsed = @strconv.parse_int(raw) catch { _ => 8787 }
+  let parsed = @string.parse_int(raw) catch { _ => 8787 }
   if parsed > 0 {
     parsed
   } else {
@@ -210,7 +210,7 @@ fn trim_trailing_slashes(path : String) -> String {
 
 ///|
 fn derive_catalog_name(path : String) -> String {
-  let normalized = trim_trailing_slashes(path.trim(chars=" \n\r\t").to_string())
+  let normalized = trim_trailing_slashes(path.trim(chars=" \n\r\t").to_owned())
   if normalized == "." {
     return "."
   }
@@ -223,7 +223,7 @@ fn derive_catalog_name(path : String) -> String {
 
 ///|
 fn parse_catalog_line(line : String) -> (String, String)? {
-  let normalized = line.trim(chars=" \n\r\t").to_string()
+  let normalized = line.trim(chars=" \n\r\t").to_owned()
   if normalized.length() == 0 || normalized.has_prefix("#") {
     return None
   }
@@ -235,11 +235,11 @@ fn parse_catalog_line(line : String) -> (String, String)? {
         start=i + 1,
         end=normalized.length(),
       )
-      let path = raw_path.trim(chars=" \n\r\t").to_string()
+      let path = raw_path.trim(chars=" \n\r\t").to_owned()
       if path.length() == 0 {
         return None
       }
-      let name = raw_name.trim(chars=" \n\r\t").to_string()
+      let name = raw_name.trim(chars=" \n\r\t").to_owned()
       if name.length() == 0 {
         Some((derive_catalog_name(path), path))
       } else {
@@ -257,7 +257,7 @@ fn parse_catalog_line(line : String) -> (String, String)? {
 pub fn parse_catalog_text(text : String) -> Array[(String, String)] {
   let entries : Array[(String, String)] = []
   for line_view in text.split("\n") {
-    let line = line_view.to_string()
+    let line = line_view.to_owned()
     match parse_catalog_line(line) {
       Some(entry) => entries.push(entry)
       None => ()
@@ -321,7 +321,7 @@ pub struct RelayPeer {
 
 ///|
 fn parse_relay_base_url(raw : String) -> String? {
-  let trimmed = trim_trailing_slashes(raw.trim(chars=" \n\r\t").to_string())
+  let trimmed = trim_trailing_slashes(raw.trim(chars=" \n\r\t").to_owned())
   if trimmed.length() == 0 {
     return None
   }
@@ -359,7 +359,7 @@ fn is_sender_safe_char(c : Char) -> Bool {
 
 ///|
 fn normalize_relay_sender(raw : String) -> String {
-  let trimmed = raw.trim(chars=" \n\r\t").to_string()
+  let trimmed = raw.trim(chars=" \n\r\t").to_owned()
   let out = StringBuilder::new()
   for c in trimmed {
     if is_sender_safe_char(c) {
@@ -396,7 +396,7 @@ fn resolve_relay_sender(options : CliOptions) -> String {
 fn resolve_relay_auth_token() -> String? {
   match @nprocess.env().get("BIT_RELAY_AUTH_TOKEN") {
     Some(token) => {
-      let normalized = token.trim(chars=" \n\r\t").to_string()
+      let normalized = token.trim(chars=" \n\r\t").to_owned()
       if normalized.length() == 0 {
         None
       } else {
@@ -456,7 +456,7 @@ fn relay_payload_url(payload : Map[String, Json]) -> String {
 ///|
 fn relay_payload_name(payload : Map[String, Json], sender : String) -> String {
   let raw = json_get_string(payload, "name", "")
-  if raw.trim(chars=" \n\r\t").to_string().length() == 0 {
+  if raw.trim(chars=" \n\r\t").to_owned().length() == 0 {
     sender
   } else {
     raw
@@ -480,7 +480,7 @@ pub fn parse_relay_nodes_from_poll(text : String) -> Array[RelayPeer] {
       for item in items {
         guard item is Json::Object(envelope) else { continue }
         let raw_sender = json_get_string(envelope, "sender", "")
-        if raw_sender.trim(chars=" \n\r\t").to_string().length() == 0 {
+        if raw_sender.trim(chars=" \n\r\t").to_owned().length() == 0 {
           continue
         }
         let sender = normalize_relay_sender(raw_sender)
@@ -488,11 +488,11 @@ pub fn parse_relay_nodes_from_poll(text : String) -> Array[RelayPeer] {
           continue
         }
         let kind = relay_payload_kind(payload)
-        if not(is_bithub_presence_kind(kind)) {
+        if !(is_bithub_presence_kind(kind)) {
           continue
         }
         let url = relay_payload_url(payload)
-        if not(is_http_url(url)) {
+        if !(is_http_url(url)) {
           continue
         }
         let name = relay_payload_name(payload, sender)
@@ -680,7 +680,7 @@ fn announce_relay_presence(
   viewer_url : String,
   name : String,
 ) -> Unit {
-  if not(is_http_url(viewer_url)) {
+  if !(is_http_url(viewer_url)) {
     return
   }
   relay_publish_presence_async(
@@ -740,7 +740,7 @@ fn start_p2p_tunnel(
   host : String,
   on_public_url : (String) -> Unit,
 ) -> @nchild.ChildProcess? {
-  if not(options.enable_p2p) {
+  if !(options.enable_p2p) {
     return None
   }
   let local_url = "http://\{host}:\{options.port}"
@@ -818,7 +818,7 @@ fn route_repo_response(state : RepoState, raw_url : String) -> PageResponse {
 
 ///|
 fn parse_catalog_repo_route(raw_url : String) -> (String, String)? {
-  if not(raw_url.has_prefix("/repo/")) {
+  if !(raw_url.has_prefix("/repo/")) {
     return None
   }
   let rest = String::unsafe_substring(raw_url, start=6, end=raw_url.length())

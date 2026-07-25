@@ -191,18 +191,15 @@ test.describe('blame view', () => {
   });
 });
 
-test.describe('navigation', () => {
-  test('nav bar has commits and branches links', async ({ page }) => {
+test.describe('workspace landing page', () => {
+  test('prompts to open a repository before showing repository navigation', async ({ page }) => {
     await page.goto('/');
-    const nav = page.getByRole('navigation', { name: 'primary navigation' });
-    await expect(nav.getByRole('link', { name: 'commits' })).toBeVisible();
-    await expect(nav.getByRole('link', { name: 'branches' })).toBeVisible();
-  });
-
-  test('home page has commits and branches in feature list', async ({ page }) => {
-    await page.goto('/');
-    const main = page.getByRole('main');
-    await expect(main.getByRole('link', { name: 'commits' })).toBeVisible();
-    await expect(main.getByRole('link', { name: 'branches' })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { level: 2, name: 'Open Repository' }),
+    ).toBeVisible();
+    await expect(page.locator('#ws-repo')).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Clone & Open' }),
+    ).toBeVisible();
   });
 });

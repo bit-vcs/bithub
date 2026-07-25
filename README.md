@@ -92,3 +92,25 @@ bit core	/Users/mz/ghq/github.com/bit-vcs/bit
 ## Cloudflare Entrypoint
 
 `src/cmd/main/main.mbt` exports `fetch(request, env, exec_ctx)` and delegates to `@mars.Server::to_handler_with_env`. Page rendering lives in `src/adapters/mars_http/server.mbt`, using `@sol.render_page` + `mizchi/luna/x/components` for SSR.
+
+### Cloudflare Artifacts browse adapter
+
+`worker-entry.js` binds the test namespace `bit-vcs-playground` as `ARTIFACTS`. The read-only
+adapter keeps Git credentials in the Worker and exposes raw Artifacts metadata instead. The binding
+uses `remote = true`, so `wrangler dev` accesses the real test namespace:
+
+- `GET /api/artifacts/repos`
+- `GET /api/artifacts/repos/<repo>/log?ref=main&limit=20&offset=0`
+- `GET /api/artifacts/repos/<repo>/commits/<sha>`
+- `GET /api/artifacts/repos/<repo>/trees/<sha>`
+
+These endpoints remain disabled until a dedicated secret is configured. This prevents the default
+public read UI from accidentally exposing a private Artifact repository:
+
+```bash
+pnpm wrangler secret put BITHUB_ARTIFACTS_READ_TOKEN
+```
+
+Call them with `Authorization: Bearer $BITHUB_ARTIFACTS_READ_TOKEN`. The adapter only calls
+`list`, `log`, `readCommit`, and `readTree`; it never creates Git tokens, writes repository data, or
+replaces bithub's R2-backed issue/PR/CI state.

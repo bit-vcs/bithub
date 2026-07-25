@@ -1,0 +1,21 @@
+{
+  "description": "Hide repo-specific navigation on home page",
+  "intent": {
+    "summary": "style: hide repo-specific nav on home page",
+    "changeType": "style",
+    "affectedComponents": ["home"]
+  },
+  "pages": [
+    {
+      "testId": "home",
+      "expect": "Navigation removed from header. Visual changed, a11y regression expected.",
+      "expectedA11yChanges": [
+        { "description": "Navigation landmark removed from home banner" }
+      ]
+    },
+    { "testId": "readme", "expect": "No changes" },
+    { "testId": "files", "expect": "Content may differ due to dynamic file listing", "visual": "any", "a11y": "any" },
+    { "testId": "issues", "expect": "No changes" },
+    { "testId": "pulls", "expect": "No changes" }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "name": "bit-vcs/vrt",
+  "version": "0.1.0",
+  "deps": {},
+  "readme": "README.md",
+  "repository": "https://github.com/bit-vcs/bithub",
+  "license": "MIT",
+  "description": "Visual Regression Testing verification toolkit",
+  "source": "src",
+  "preferred-target": "js"
+}

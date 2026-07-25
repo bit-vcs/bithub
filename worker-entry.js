@@ -1,3 +1,5 @@
+import { handleArtifactsApi } from "./src/artifacts_api.mjs";
+
 // Cloudflare Workers entry point wrapper
 // Defers MoonBit module initialization to first fetch() call
 // to avoid "Disallowed operation in global scope" errors (random seed, etc.)
@@ -332,6 +334,10 @@ export default {
     }
     if (url.pathname === "/api/activity") {
       return handleApiActivity(request, env);
+    }
+    const artifactsResponse = await handleArtifactsApi(request, env);
+    if (artifactsResponse) {
+      return artifactsResponse;
     }
 
     setupR2(env);

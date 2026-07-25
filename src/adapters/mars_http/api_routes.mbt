@@ -194,7 +194,7 @@ fn register_api_routes(app : @mars.Server, api : @core.ApiState) -> Unit {
           let ok = api.add_comment(issue_id, author, body, timestamp)
           let resp : Map[String, Json] = {}
           resp.set("ok", ok.to_json())
-          if not(ok) {
+          if !(ok) {
             resp.set("error", "issue not found".to_json())
           }
           ctx.json(resp.to_json())

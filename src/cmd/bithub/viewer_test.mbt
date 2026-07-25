@@ -1,9 +1,9 @@
 ///|
 test "sanitize_rel_path blocks traversal" {
-  inspect(sanitize_rel_path("README.md"), content="Some(\"README.md\")")
-  inspect(sanitize_rel_path("/src/main.mbt"), content="Some(\"src/main.mbt\")")
-  inspect(sanitize_rel_path("../secret"), content="None")
-  inspect(sanitize_rel_path("a/../../b"), content="None")
+  debug_inspect(sanitize_rel_path("README.md"), content="Some(\"README.md\")")
+  debug_inspect(sanitize_rel_path("/src/main.mbt"), content="Some(\"src/main.mbt\")")
+  debug_inspect(sanitize_rel_path("../secret"), content="None")
+  debug_inspect(sanitize_rel_path("a/../../b"), content="None")
 }
 
 ///|
@@ -73,7 +73,7 @@ test "render_layout uses collapsible tree for filer" {
   assert_true(html.contains("class=\"file-tree-dir\""))
   assert_true(html.contains("data-tree-path=\"src\""))
   assert_true(html.contains("[*] main.mbt"))
-  assert_true(not(html.contains("[*] src/cmd/bithub/main.mbt")))
+  assert_true(!(html.contains("[*] src/cmd/bithub/main.mbt")))
   assert_true(html.contains("<summary"))
 }
 
@@ -115,9 +115,25 @@ test "render_issues returns page response" {
 }
 
 ///|
-test "scan_repo_files includes README.md in this repository" {
-  let files = scan_repo_files(".", 400)
+extern "js" fn create_repo_scan_fixture(path : String) -> Unit =
+  #| (path) => {
+  #|   const fs = require("node:fs")
+  #|   fs.rmSync(path, { recursive: true, force: true })
+  #|   fs.mkdirSync(path, { recursive: true })
+  #|   fs.writeFileSync(path + "/README.md", "# test fixture")
+  #| }
+
+///|
+extern "js" fn remove_repo_scan_fixture(path : String) -> Unit =
+  #| (path) => { require("node:fs").rmSync(path, { recursive: true, force: true }) }
+
+///|
+test "scan_repo_files includes files from an isolated fixture" {
+  let root = "/tmp/bithub-repo-scan-test"
+  create_repo_scan_fixture(root)
+  let files = scan_repo_files(root, 400)
   assert_true(files.contains("README.md"))
+  remove_repo_scan_fixture(root)
 }
 
 ///|

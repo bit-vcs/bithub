@@ -181,17 +181,18 @@ test.describe('compare', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Navigation includes new links
+// Workspace landing page
 // ---------------------------------------------------------------------------
-test.describe('navigation', () => {
-  test('nav bar includes issues, activity, search', async ({ page }) => {
+test.describe('workspace landing page', () => {
+  test('prompts to open a repository before showing repository navigation', async ({ page }) => {
     await page.goto('/');
-    const nav = page.getByRole('navigation', {
-      name: 'primary navigation',
-    });
-    await expect(nav.getByRole('link', { name: 'issues' })).toBeVisible();
-    await expect(nav.getByRole('link', { name: 'activity' })).toBeVisible();
-    await expect(nav.getByRole('link', { name: 'search' })).toBeVisible();
+    await expect(
+      page.getByRole('heading', { level: 2, name: 'Open Repository' }),
+    ).toBeVisible();
+    await expect(page.locator('#ws-repo')).toBeVisible();
+    await expect(
+      page.getByRole('button', { name: 'Clone & Open' }),
+    ).toBeVisible();
   });
 });
 

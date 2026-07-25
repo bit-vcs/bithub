@@ -12,48 +12,37 @@ pub(open) trait Storage {
   has(Self, String) -> Bool
 }
 
-///| MemoryStorage wraps the existing @kv.Kv for in-memory use.
+///| MemoryStorage is the in-memory implementation used by demo pages.
 pub struct MemoryStorage {
-  kv : @kv.Kv
+  data : Map[String, String]
 }
 
 ///|
 impl Storage for MemoryStorage with get(self, key) {
-  self.kv.get(key)
+  match self.data.get(key) {
+    Some(value) => Some(@utf8.encode(value))
+    None => None
+  }
 }
 
 ///|
 impl Storage for MemoryStorage with set_string(self, key, value) {
-  self.kv.set_string(key, value)
+  self.data.set(key, value)
 }
 
 ///|
 impl Storage for MemoryStorage with list(self, prefix) {
-  self.kv.list(prefix)
+  list_map_keys(self.data, prefix)
 }
 
 ///|
 impl Storage for MemoryStorage with has(self, key) {
-  self.kv.has(key)
+  self.data.contains(key)
 }
 
 ///| Create a MemoryStorage with seeded demo data.
 pub fn MemoryStorage::new_seeded() -> MemoryStorage {
-  let fs = @bit.TestFs::new()
-  let bit_fs = @bitfs.Fs::empty("/repo/.git")
-  let tree : KvWorkingTree = { fs: bit_fs, backing_fs: fs, write_fs: fs }
-  let store : KvObjectStore = {
-    backing_fs: fs,
-    write_fs: fs,
-    git_dir: "/repo/.git",
-  }
-  let kv = @kv.Kv::new(
-    @kv.NodeId::new("bithub"),
-    tree,
-    store,
-    @bit.ObjectId::zero(),
-  )
-  let mem : MemoryStorage = { kv, }
+  let mem : MemoryStorage = { data: Map([]) }
   seed_files(mem)
   mem
 }
@@ -84,6 +73,11 @@ pub impl Storage for MapStorage with set_string(self, key, value) {
 
 ///|
 pub impl Storage for MapStorage with list(self, prefix) {
+  list_map_keys(self.data, prefix)
+}
+
+///|
+fn list_map_keys(data : Map[String, String], prefix : String) -> Array[String] {
   let result : Array[String] = []
   let seen : Map[String, Bool] = {}
   let prefix_with_slash = if prefix.length() == 0 {
@@ -91,7 +85,7 @@ pub impl Storage for MapStorage with list(self, prefix) {
   } else {
     prefix + "/"
   }
-  for key, _ in self.data {
+  for key, _ in data {
     if prefix_with_slash.length() == 0 || key.has_prefix(prefix_with_slash) {
       let rest = String::unsafe_substring(
         key,
@@ -105,7 +99,7 @@ pub impl Storage for MapStorage with list(self, prefix) {
         Some(i) => String::unsafe_substring(rest, start=0, end=i)
         None => rest
       }
-      if not(seen.contains(name)) {
+      if !(seen.contains(name)) {
         seen.set(name, true)
         result.push(name)
       }
@@ -123,7 +117,7 @@ pub impl Storage for MapStorage with has(self, key) {
 fn parse_kv_fields(text : String) -> Map[String, String] {
   let fields : Map[String, String] = {}
   for line_view in text.split("\n") {
-    let line = line_view.to_string()
+    let line = line_view.to_owned()
     if line.length() == 0 {
       continue
     }

@@ -1,7 +1,7 @@
 ///|
 pub fn load_repo_issues(root : String, limit : Int) -> Array[IssueSummary] {
   let git_dir = @npath.join2(root, ".git")
-  if not(@nfs.existsSync(git_dir)) {
+  if !(@nfs.existsSync(git_dir)) {
     return []
   }
   let os_fs = JsOsFs::new()
@@ -31,8 +31,8 @@ fn JsOsFs::new() -> JsOsFs {
 }
 
 ///|
-fn io_error(err : @fs.IOError) -> @bit.GitError {
-  @bit.GitError::IoError(err.to_string())
+fn io_error(_err : @fs.IOError) -> @bit.GitError {
+  @bit.GitError::IoError("filesystem operation failed")
 }
 
 ///|
@@ -44,7 +44,7 @@ fn ensure_dir(path : String) -> Unit raise @bit.GitError {
   let parts = path.split("/").collect()
   let mut current = ""
   for part_view in parts {
-    let part = part_view.to_string()
+    let part = part_view.to_owned()
     if part.length() == 0 {
       current = "/"
       continue
@@ -55,7 +55,7 @@ fn ensure_dir(path : String) -> Unit raise @bit.GitError {
       current + "/" + part
     }
     let exists = @fs.is_dir(current) catch { _ => false }
-    if not(exists) {
+    if !(exists) {
       @fs.create_dir(current) catch {
         err => raise io_error(err)
       }

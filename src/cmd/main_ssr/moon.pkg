@@ -1,12 +1,13 @@
+supported_targets = "js"
+
 import {
   "bit-vcs/bithub/adapters/mars_http" @mars_http,
   "mizchi/js/node/process" @nprocess,
   "mizchi/sol" @sol,
-  "moonbitlang/core/strconv" @strconv,
+  "moonbitlang/core/string" @string,
 }
 
 options(
-  "supported-targets": "js",
   is_main: true,
   link: { "js": { "format": "cjs" } },
   targets: {
