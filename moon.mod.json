@@ -1,6 +1,6 @@
 {
   "name": "bit-vcs/bithub",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "deps": {
     "moonbitlang/async": "0.20.3",
     "mizchi/mars": "0.3.11",
