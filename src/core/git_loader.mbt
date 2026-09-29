@@ -239,7 +239,7 @@ extern "js" fn node_read_file_safe(path : String) -> Bytes? =
   #| }
 
 ///|
-extern "js" fn node_readdir_safe(path : String) -> Array[String] =
+extern "js" fn node_readdir_safe_ffi(path : String) -> FixedArray[String] =
   #| (path) => {
   #|   try {
   #|     const fs = require("node:fs");
@@ -248,6 +248,10 @@ extern "js" fn node_readdir_safe(path : String) -> Array[String] =
   #|     return [];
   #|   }
   #| }
+
+fn node_readdir_safe(path : String) -> Array[String] {
+  Array::from_fixed_array(node_readdir_safe_ffi(path))
+}
 
 ///|
 extern "js" fn node_is_dir(path : String) -> Bool =
@@ -268,7 +272,7 @@ extern "js" fn node_is_file(path : String) -> Bool =
   #| }
 
 ///|
-extern "js" fn scan_readdir(path : String) -> Array[String] =
+extern "js" fn scan_readdir_ffi(path : String) -> FixedArray[String] =
   #| (path) => {
   #|   try {
   #|     const fs = require("node:fs");
@@ -277,6 +281,10 @@ extern "js" fn scan_readdir(path : String) -> Array[String] =
   #|     return [];
   #|   }
   #| }
+
+fn scan_readdir(path : String) -> Array[String] {
+  Array::from_fixed_array(scan_readdir_ffi(path))
+}
 
 ///|
 /// Scan files in a directory recursively, skipping common non-source dirs.

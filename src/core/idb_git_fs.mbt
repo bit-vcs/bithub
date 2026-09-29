@@ -65,10 +65,10 @@ extern "js" fn idb_fs_has(prefix : String, key : String) -> Bool =
   #| })()
 
 ///|
-extern "js" fn idb_fs_list(
+extern "js" fn idb_fs_list_ffi(
   prefix : String,
   dir : String,
-) -> Array[String] =
+) -> FixedArray[String] =
   #| (() => {
   #|   return (prefix, dir) => {
   #|     const cache = globalThis.__idb_fs_cache || {};
@@ -83,6 +83,13 @@ extern "js" fn idb_fs_list(
   #|     return Array.from(seen);
   #|   };
   #| })()
+
+fn idb_fs_list(
+  prefix : String,
+  dir : String,
+) -> Array[String] {
+  Array::from_fixed_array(idb_fs_list_ffi(prefix, dir))
+}
 
 ///|
 extern "js" fn idb_fs_is_dir(prefix : String, path : String) -> Bool =
