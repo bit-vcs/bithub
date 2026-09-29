@@ -76,7 +76,7 @@ extern "js" fn fs_write_string(path : String, content : String) -> Unit =
   #| }
 
 ///|
-extern "js" fn fs_readdir(path : String) -> Array[String] =
+extern "js" fn fs_readdir_ffi(path : String) -> FixedArray[String] =
   #| (path) => {
   #|   try {
   #|     const fs = require("node:fs");
@@ -85,6 +85,10 @@ extern "js" fn fs_readdir(path : String) -> Array[String] =
   #|     return [];
   #|   }
   #| }
+
+fn fs_readdir(path : String) -> Array[String] {
+  Array::from_fixed_array(fs_readdir_ffi(path))
+}
 
 ///|
 extern "js" fn fs_is_file(path : String) -> Bool =

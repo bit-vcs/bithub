@@ -42,7 +42,7 @@ extern "js" fn r2_put(bucket_name : String, key : String, value : String) -> Uni
   #| })()
 
 ///|
-extern "js" fn r2_list(bucket_name : String, prefix : String) -> Array[String] =
+extern "js" fn r2_list_ffi(bucket_name : String, prefix : String) -> FixedArray[String] =
   #| (() => {
   #|   return (bucket_name, prefix) => {
   #|     const cache = globalThis.__r2_cache || {};
@@ -63,6 +63,10 @@ extern "js" fn r2_list(bucket_name : String, prefix : String) -> Array[String] =
   #|     return result;
   #|   };
   #| })()
+
+fn r2_list(bucket_name : String, prefix : String) -> Array[String] {
+  Array::from_fixed_array(r2_list_ffi(bucket_name, prefix))
+}
 
 ///|
 extern "js" fn r2_has(bucket_name : String, key : String) -> Bool =
